@@ -34,14 +34,15 @@ const BUTTON_ID = "bibliometero-insights-button";
 const CSS_LINK_ID = "bibliometero-insights-css";
 const DATA_DEBOUNCE_MS = 250;
 
-/** Histogram (bars) icon, stroked with context-stroke for currentColor recolour. */
+/**
+ * Chart icon: the bar-chart emoji rendered as the toolbar button image. Using a
+ * colour emoji (instead of a context-stroke SVG) means it shows up without any
+ * -moz-context-properties theming, which the button does not set.
+ */
 const HISTOGRAM_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ' +
-  'stroke="context-stroke" stroke-width="2" stroke-linecap="round" ' +
-  'stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/>' +
-  '<rect x="4.5" y="11" width="3.4" height="8"/>' +
-  '<rect x="10.3" y="6" width="3.4" height="13"/>' +
-  '<rect x="16.1" y="13" width="3.4" height="6"/></svg>';
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' +
+  '<text x="12" y="20" font-size="20" text-anchor="middle" ' +
+  'dominant-baseline="alphabetic">\u{1F4CA}</text></svg>';
 
 function svgDataUri(svg: string): string {
   return `url('data:image/svg+xml,${encodeURIComponent(svg)}')`;

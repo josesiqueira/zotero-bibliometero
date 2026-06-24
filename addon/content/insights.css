@@ -1,0 +1,211 @@
+/*
+ * insights.css - chrome for the Bibliometero "Insights" hub tab.
+ *
+ * Injected at runtime by InsightsHub.registerWindow via a <link>. Everything is
+ * scoped under .bm-hub-root so it never leaks into the rest of the Zotero UI.
+ * The concrete light/dark token sets live on .bibliometero-theme-light /
+ * .bibliometero-theme-dark (names reused from graphView.css so views can share
+ * the same variables). Views paint their own canvas/SVG; these rules style only
+ * the shell (sidebar, topbar, viewport frame, status bar).
+ */
+
+/* ---- root layout ---- */
+.bm-hub-root {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  font: menu;
+  font-size: 12px;
+}
+
+/* ---- sidebar ---- */
+.bm-hub-sidebar {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-inline-end: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
+  background: var(--bibliometero-graph-control-bg, rgba(128, 128, 128, 0.05));
+  overflow: hidden;
+  transition: flex-basis 0.12s ease;
+}
+
+.bm-hub-sidebar.bm-collapsed {
+  flex-basis: 44px;
+}
+
+.bm-hub-brand {
+  flex: 0 0 auto;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bm-hub-sidebar.bm-collapsed .bm-hub-brand {
+  font-size: 0; /* hide the word; rail only */
+}
+
+.bm-hub-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+}
+
+.bm-hub-nav-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bm-hub-nav-btn:hover {
+  background: var(--bibliometero-graph-hover, rgba(128, 128, 128, 0.15));
+}
+
+.bm-hub-nav-btn.bm-active {
+  background: var(--bibliometero-graph-accent, #1a73e8);
+  color: #fff;
+}
+
+.bm-hub-sidebar.bm-collapsed .bm-hub-nav-label {
+  /* In the collapsed rail, show only a leading glyph slot. */
+  font-size: 0;
+}
+
+.bm-hub-sidebar.bm-collapsed .bm-hub-nav-btn {
+  text-align: center;
+  padding: 7px 4px;
+}
+
+/* ---- main column ---- */
+.bm-hub-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- topbar ---- */
+.bm-hub-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
+}
+
+.bm-hub-active-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bm-hub-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bm-hub-topbar-spacer {
+  flex: 1 1 auto;
+}
+
+.bm-hub-btn {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  background: var(--bibliometero-graph-control-bg, rgba(128, 128, 128, 0.08));
+  border: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.4));
+  border-radius: 5px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bm-hub-btn:hover {
+  background: var(--bibliometero-graph-hover, rgba(128, 128, 128, 0.18));
+}
+
+/* ---- viewport ---- */
+.bm-hub-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bm-hub-viewport canvas,
+.bm-hub-viewport svg {
+  display: block;
+}
+
+/* ---- status bar ---- */
+.bm-hub-status {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 11px;
+  opacity: 0.82;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-top: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
+}
+
+.bm-hub-status.bm-warn {
+  color: var(--bibliometero-graph-warn, #c6701c);
+  font-weight: 600;
+  opacity: 1;
+}
+
+/* ---- shared chart theme tokens (reused by every view) ---- */
+.bibliometero-theme-light {
+  --bibliometero-graph-border: rgba(0, 0, 0, 0.18);
+  --bibliometero-graph-hover: rgba(0, 0, 0, 0.07);
+  --bibliometero-graph-control-bg: rgba(0, 0, 0, 0.04);
+  --bibliometero-graph-accent: #1a73e8;
+  --bibliometero-graph-warn: #c6701c;
+  --bibliometero-graph-tip-bg: rgba(40, 40, 46, 0.94);
+  --bibliometero-chart-bg: #fafafa;
+  --bibliometero-chart-fg: #222222;
+  --bibliometero-chart-muted: #6b6b6b;
+  --bibliometero-chart-grid: rgba(0, 0, 0, 0.10);
+  color: #222;
+  background: #fafafa;
+}
+
+.bibliometero-theme-dark {
+  --bibliometero-graph-border: rgba(255, 255, 255, 0.18);
+  --bibliometero-graph-hover: rgba(255, 255, 255, 0.1);
+  --bibliometero-graph-control-bg: rgba(255, 255, 255, 0.06);
+  --bibliometero-graph-accent: #8ab4f8;
+  --bibliometero-graph-warn: #f0a85a;
+  --bibliometero-graph-tip-bg: rgba(20, 20, 24, 0.94);
+  --bibliometero-chart-bg: #1d1e22;
+  --bibliometero-chart-fg: #e6e6e6;
+  --bibliometero-chart-muted: #9a9a9a;
+  --bibliometero-chart-grid: rgba(255, 255, 255, 0.12);
+  color: #e6e6e6;
+  background: #1d1e22;
+}

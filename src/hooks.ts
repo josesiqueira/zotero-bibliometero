@@ -1,7 +1,7 @@
 import { initLocale } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
-import { GraphViewFactory } from "./modules/graphView";
+import { InsightsHub } from "./modules/insights/hub";
 
 async function onStartup() {
   await Promise.all([
@@ -12,8 +12,9 @@ async function onStartup() {
 
   initLocale();
 
-  // Knowledge graph (the one and only feature).
-  await GraphViewFactory.register();
+  // Insights hub: the chart-icon panel with the six visualizations.
+  // register() also calls registerViews() to populate the view registry.
+  await InsightsHub.register();
 
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
@@ -26,17 +27,17 @@ async function onStartup() {
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   // Create ztoolkit for every window.
   addon.data.ztoolkit = createZToolkit();
-  GraphViewFactory.registerWindow(win);
+  InsightsHub.registerWindow(win);
 }
 
 async function onMainWindowUnload(win: _ZoteroTypes.MainWindow): Promise<void> {
-  GraphViewFactory.unregisterWindow(win);
+  InsightsHub.unregisterWindow(win);
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
 }
 
 async function onShutdown(): Promise<void> {
-  GraphViewFactory.unregister();
+  InsightsHub.unregister();
 
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();

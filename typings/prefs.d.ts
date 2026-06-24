@@ -7,14 +7,13 @@
 declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
-      "graphView.enable": boolean;
-      "graphView.mode": string;
-      "graphView.scope": string;
-      "graphView.theme": string;
-      "graphView.nodeCap": number;
-      "graphView.showLabels": boolean;
-      "graphView.charge": number;
-      "graphView.linkDistance": number;
+      "hub.lastView": string;
+      "hub.defaultView": string;
+      "hub.sidebarCollapsed": boolean;
+      "hub.theme": string;
+      "hub.scope": string;
+      "hub.topN": number;
+      "hub.networkCap": number;
     };
   }
 }

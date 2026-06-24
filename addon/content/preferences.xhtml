@@ -7,36 +7,41 @@
   <label><html:h1 data-l10n-id="pref-title"></html:h1></label>
 
   <groupbox>
-    <label><html:h2 data-l10n-id="pref-group-graph"></html:h2></label>
-    <checkbox preference="graphView.enable" data-l10n-id="pref-graphView-enable" />
-    <hbox align="center" style="margin-inline-start: 1.5em;">
-      <html:label data-l10n-id="pref-graphView-mode"></html:label>
-      <menulist preference="graphView.mode">
+    <label><html:h2 data-l10n-id="pref-group-insights"></html:h2></label>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-insights-defaultView"></html:label>
+      <menulist preference="hub.defaultView">
         <menupopup>
-          <menuitem value="default" label="default" />
-          <menuitem value="related" label="related" />
-          <menuitem value="author" label="author" />
-          <menuitem value="tag" label="tag" />
+          <menuitem value="coauthorship" label="Co-authorship" />
+          <menuitem value="author-paper" label="Author / paper" />
+          <menuitem value="pubs-per-year" label="Publications / year" />
+          <menuitem value="top-sources" label="Top sources" />
+          <menuitem value="top-authors" label="Top authors" />
+          <menuitem value="composition" label="Composition" />
         </menupopup>
       </menulist>
-      <html:label data-l10n-id="pref-graphView-theme"></html:label>
-      <menulist preference="graphView.theme">
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-insights-theme"></html:label>
+      <menulist preference="hub.theme">
         <menupopup>
           <menuitem value="auto" label="auto" />
           <menuitem value="light" label="light" />
           <menuitem value="dark" label="dark" />
         </menupopup>
       </menulist>
-    </hbox>
-    <hbox align="center" style="margin-inline-start: 1.5em;">
-      <html:label data-l10n-id="pref-graphView-scope"></html:label>
-      <menulist preference="graphView.scope">
+      <html:label data-l10n-id="pref-insights-scope"></html:label>
+      <menulist preference="hub.scope">
         <menupopup>
-          <menuitem value="view" label="current view" />
-          <menuitem value="selection" label="selection + neighbours" />
           <menuitem value="library" label="whole library" />
+          <menuitem value="view" label="current view" />
+          <menuitem value="selection" label="selection" />
         </menupopup>
       </menulist>
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-insights-topN"></html:label>
+      <html:input type="number" min="1" max="100" preference="hub.topN" />
     </hbox>
   </groupbox>
 

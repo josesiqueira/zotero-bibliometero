@@ -2,12 +2,11 @@
 // Default preferences for Zotero Bibliometero.
 // The scaffold prepends the prefs prefix (extensions.zotero.zoterobibliometero.) to each key.
 
-// Knowledge graph.
-pref("graphView.enable", true);
-pref("graphView.mode", "default");
-pref("graphView.scope", "view");
-pref("graphView.theme", "auto");
-pref("graphView.nodeCap", 400);
-pref("graphView.showLabels", true);
-pref("graphView.charge", -220);
-pref("graphView.linkDistance", 60);
+// Insights hub.
+pref("hub.lastView", "coauthorship");
+pref("hub.defaultView", "coauthorship");
+pref("hub.sidebarCollapsed", false);
+pref("hub.theme", "auto");
+pref("hub.scope", "library");
+pref("hub.topN", 15);
+pref("hub.networkCap", 400);

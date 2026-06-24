@@ -182,6 +182,13 @@ export class PubYearsChart implements VizModule {
           xy.y,
         );
       };
+      // Click a dated bar -> find that year's items in the library.
+      if (!isUnknown) {
+        (rect as unknown as SVGElement).style.cursor = "pointer";
+        rect.addEventListener("click", () => {
+          this.ctx?.searchLibrary?.(b.key);
+        });
+      }
       rect.addEventListener("pointerenter", onShow);
       rect.addEventListener("pointermove", onShow);
       rect.addEventListener("pointerleave", () => {

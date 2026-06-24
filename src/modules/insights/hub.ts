@@ -40,6 +40,22 @@ const BUTTON_ID = "bibliometero-insights-button";
 const CSS_LINK_ID = "bibliometero-insights-css";
 const DATA_DEBOUNCE_MS = 250;
 
+/** One-line "what am I looking at" shown on hover over each nav tab. */
+const VIEW_DESCRIPTIONS: Record<string, string> = {
+  coauthorship:
+    "Co-authorship network: each dot is an author, a line links authors who share a paper. Bigger dots wrote more.",
+  "author-paper":
+    "Your papers and their authors, linked by who wrote what. Best on a Curated set; the whole library is capped to the most co-authored papers.",
+  "pubs-per-year":
+    "How many items you have per publication year. Click a bar to find that year's items in your library.",
+  "top-sources":
+    "The journals and conferences that appear most in this set.",
+  "top-authors":
+    "Authors ranked by how many of your items they wrote. Click one to find their items in your library.",
+  composition: "A breakdown of your items by type and by collection.",
+  set: "Manage the curated set, the specific papers Insights focuses on. Add papers by right-clicking them in the library.",
+};
+
 /**
  * Chart icon: the bar-chart emoji rendered as the toolbar button image. Using a
  * colour emoji (instead of a context-stroke SVG) means it shows up without any
@@ -470,7 +486,7 @@ export const InsightsHub = (() => {
     for (const entry of VizRegistry.list()) {
       const btn = el(doc, "button", "bm-nav-tab") as HTMLButtonElement;
       btn.setAttribute("data-view-id", entry.id);
-      btn.setAttribute("title", entry.label);
+      btn.setAttribute("title", VIEW_DESCRIPTIONS[entry.id] || entry.label);
       btn.textContent = entry.label;
       btn.addEventListener("click", () => void activate(st, entry.id));
       navStrip.appendChild(btn);
@@ -561,11 +577,19 @@ export const InsightsHub = (() => {
   // ---- source toggle --------------------------------------------------
 
   function onSourceChange(st: WinState, next: "library" | "set"): void {
-    if (source() === next) return;
     setSource(next);
     updateSourceUI(st);
-    // Re-fetch + re-activate the current view for the new source.
-    void activate(st, st.activeId || lastView());
+    if (next === "set") {
+      // Clicking "Curated set" always takes you to the Set tab so the click has
+      // a clear, visible effect (you see exactly what is in the set). Done even
+      // when the source was already "set".
+      void activate(st, "set");
+      return;
+    }
+    // Back to "Whole library": if sitting on the Set management view, return to a
+    // visualization; otherwise re-render the current view against the library.
+    const target = st.activeId === "set" ? defaultView() : st.activeId || lastView();
+    void activate(st, target);
   }
 
   function curatedCount(st: WinState): number {

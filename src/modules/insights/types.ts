@@ -207,6 +207,12 @@ export interface VizContext {
   selectItem(itemId: number): void;
   /** Optional cross-link: a chart asks the hub to open the co-authorship view for an author. */
   focusAuthor?(authorKey: string, label: string): void;
+  /**
+   * Drill-down: show the matching items in Zotero by running a quick search for
+   * `text` (an author name, a year, a source) in the library. Lets a chart click
+   * take the user to the actual papers.
+   */
+  searchLibrary?(text: string): void;
   /** View-namespaced prefs (backed by `bibliometero.view.<id>.<key>`). */
   prefs: VizPrefs;
   /** Write the shared status line (counts / truncation note). */

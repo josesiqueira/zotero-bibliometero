@@ -91,7 +91,7 @@ export class AuthorPaperView implements VizModule {
 
   private report(ctx: VizContext, data: BipartiteData): void {
     const note = data.truncated
-      ? ` (showing ${data.papers.length} of ${data.totalPapers})`
+      ? ` (showing the ${data.papers.length} most co-authored of ${data.totalPapers}; switch to a Curated set to see all of yours)`
       : "";
     ctx.setStatus(
       `${data.papers.length} papers · ${data.authors.length} authors · ${data.edges.length} links${note}`,

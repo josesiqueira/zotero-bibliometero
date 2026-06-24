@@ -132,6 +132,41 @@ function selectItemIn(win: _ZoteroTypes.MainWindow, itemId: number): void {
   );
 }
 
+/**
+ * Drill-down: take the user to the library and run Zotero's quick search for
+ * `text` (author name / year / source), so the matching papers filter into the
+ * items list and they can browse them normally. Reversible by clearing the
+ * search. We jump to My Library first so the search covers everything.
+ */
+async function searchLibraryIn(
+  win: _ZoteroTypes.MainWindow,
+  text: string,
+): Promise<void> {
+  const w = win as any;
+  const q = (text || "").trim();
+  if (!q) return;
+  try {
+    w.Zotero_Tabs?.select?.("zotero-pane");
+    try {
+      await w.ZoteroPane?.collectionsView?.selectLibrary?.(
+        Zotero.Libraries.userLibraryID,
+      );
+    } catch {
+      /* stay in the current collection if selecting the library fails */
+    }
+    const sb = win.document.getElementById("zotero-tb-search") as any;
+    if (sb) {
+      sb.value = q;
+      if (typeof sb.doCommand === "function") sb.doCommand();
+      else sb.dispatchEvent(new win.Event("command", { bubbles: true }));
+    } else if (typeof w.ZoteroPane?.search === "function") {
+      w.ZoteroPane.search(q);
+    }
+  } catch (e) {
+    ztoolkit.log("[Bibliometero Insights] searchLibrary failed", e);
+  }
+}
+
 export function buildContext(deps: ContextDeps): VizContext {
   const { win, activeId, statusEl, controlsSlot } = deps;
 
@@ -162,7 +197,13 @@ export function buildContext(deps: ContextDeps): VizContext {
       selectItemIn(win, itemId);
     },
     focusAuthor(authorKey: string, label: string) {
-      deps.focusAuthor(authorKey, label);
+      // Clicking an author now finds their papers in the library (not a jump to
+      // another graph). authorKey is unused; the display label drives the search.
+      void authorKey;
+      void searchLibraryIn(win, label);
+    },
+    searchLibrary(text: string) {
+      void searchLibraryIn(win, text);
     },
     prefs: makePrefs(activeId),
     setStatus(text: string, opts?: { warn?: boolean }) {

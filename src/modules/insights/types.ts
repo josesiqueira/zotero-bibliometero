@@ -213,6 +213,10 @@ export interface VizContext {
    * take the user to the actual papers.
    */
   searchLibrary?(text: string): void;
+  /** Drill-down: select these items in the library (e.g. all of one item type). */
+  revealItems?(itemIds: number[]): void;
+  /** Drill-down: navigate to a Zotero collection by id. */
+  openCollection?(collectionID: number): void;
   /** View-namespaced prefs (backed by `bibliometero.view.<id>.<key>`). */
   prefs: VizPrefs;
   /** Write the shared status line (counts / truncation note). */

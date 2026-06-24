@@ -237,6 +237,13 @@ export class CompositionChart implements VizModule {
       path.appendChild(titleEl);
       arcByKey.set(seg.key, path);
 
+      // Drill-down: collection slice -> open the collection; item-type slice ->
+      // select that type's items in the library.
+      (path as unknown as SVGElement).style.cursor = "pointer";
+      path.addEventListener("click", () => {
+        void this.onArcClick(seg.key);
+      });
+
       const block = this.findBlockLater();
       path.addEventListener("pointerenter", (ev) => {
         this.highlightArc(block, seg.key);
@@ -331,6 +338,35 @@ export class CompositionChart implements VizModule {
   }
 
   /** Resolve the block being built; the most recently pushed one. */
+  /**
+   * Drill-down when a donut slice is clicked. Collection slices (key "c:<id>")
+   * navigate to that collection; item-type slices select that type's items in
+   * the library. The "Other" aggregate matches no type, so it is a safe no-op.
+   */
+  private async onArcClick(key: string): Promise<void> {
+    if (!this.ctx) return;
+    if (key.startsWith("c:")) {
+      const id = parseInt(key.slice(2), 10);
+      if (Number.isFinite(id)) this.ctx.openCollection?.(id);
+      return;
+    }
+    try {
+      const items = await this.ctx.data.items();
+      const ids = items
+        .filter((it) => {
+          try {
+            return it.itemType === key;
+          } catch {
+            return false;
+          }
+        })
+        .map((it) => it.id);
+      this.ctx.revealItems?.(ids);
+    } catch (e) {
+      this.ctx.log?.("[composition] drill-down failed", e);
+    }
+  }
+
   private findBlockLater(): DonutBlock {
     // Closures created during buildBlock reference the block pushed at the end
     // of that same call; return a thunk-resolved reference via index.

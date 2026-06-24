@@ -145,6 +145,7 @@ export class TopSourcesChart implements VizModule {
       maxLabelChars: 28,
       tooltip: this.tooltip,
       toHostXY: (cx, cy) => this.hostXY(cx, cy),
+      onBarClick: (e) => this.ctx?.searchLibrary?.(e.label),
     });
 
     if (hasFooter) {

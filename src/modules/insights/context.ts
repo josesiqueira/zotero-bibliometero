@@ -167,6 +167,66 @@ async function searchLibraryIn(
   }
 }
 
+/** Drill-down: select a set of items in the library (e.g. all of one type). */
+async function revealItemsIn(
+  win: _ZoteroTypes.MainWindow,
+  itemIds: number[],
+): Promise<void> {
+  const w = win as any;
+  const ids = (itemIds || []).filter((n) => Number.isFinite(n));
+  if (!ids.length) return;
+  try {
+    w.Zotero_Tabs?.select?.("zotero-pane");
+    try {
+      await w.ZoteroPane?.collectionsView?.selectLibrary?.(
+        Zotero.Libraries.userLibraryID,
+      );
+    } catch {
+      /* stay put if selecting the library fails */
+    }
+    // Clear any quick search so the whole library is visible, then select.
+    const sb = win.document.getElementById("zotero-tb-search") as any;
+    if (sb && sb.value) {
+      sb.value = "";
+      if (typeof sb.doCommand === "function") sb.doCommand();
+    }
+    if (typeof w.ZoteroPane?.selectItems === "function") {
+      await w.ZoteroPane.selectItems(ids);
+    } else if (typeof w.ZoteroPane?.itemsView?.selectItems === "function") {
+      await w.ZoteroPane.itemsView.selectItems(ids);
+    } else if (typeof w.ZoteroPane?.selectItem === "function") {
+      await w.ZoteroPane.selectItem(ids[0]);
+    }
+  } catch (e) {
+    ztoolkit.log("[Bibliometero Insights] revealItems failed", e);
+  }
+}
+
+/** Drill-down: navigate to a Zotero collection by id. */
+async function openCollectionIn(
+  win: _ZoteroTypes.MainWindow,
+  collectionID: number,
+): Promise<void> {
+  const w = win as any;
+  if (!Number.isFinite(collectionID)) return;
+  try {
+    w.Zotero_Tabs?.select?.("zotero-pane");
+    const sb = win.document.getElementById("zotero-tb-search") as any;
+    if (sb && sb.value) {
+      sb.value = "";
+      if (typeof sb.doCommand === "function") sb.doCommand();
+    }
+    const cv = w.ZoteroPane?.collectionsView;
+    if (typeof cv?.selectCollection === "function") {
+      await cv.selectCollection(collectionID);
+    } else if (typeof cv?.selectByID === "function") {
+      await cv.selectByID("C" + collectionID);
+    }
+  } catch (e) {
+    ztoolkit.log("[Bibliometero Insights] openCollection failed", e);
+  }
+}
+
 export function buildContext(deps: ContextDeps): VizContext {
   const { win, activeId, statusEl, controlsSlot } = deps;
 
@@ -204,6 +264,12 @@ export function buildContext(deps: ContextDeps): VizContext {
     },
     searchLibrary(text: string) {
       void searchLibraryIn(win, text);
+    },
+    revealItems(itemIds: number[]) {
+      void revealItemsIn(win, itemIds);
+    },
+    openCollection(collectionID: number) {
+      void openCollectionIn(win, collectionID);
     },
     prefs: makePrefs(activeId),
     setStatus(text: string, opts?: { warn?: boolean }) {

@@ -2,6 +2,11 @@ import { initLocale } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { InsightsHub } from "./modules/insights/hub";
+import { ContextMenus } from "./modules/insights/set/contextMenus";
+import {
+  init as initInsightsSet,
+  unregister as unregisterInsightsSet,
+} from "./modules/insights/set/store";
 
 async function onStartup() {
   await Promise.all([
@@ -11,6 +16,9 @@ async function onStartup() {
   ]);
 
   initLocale();
+
+  // Curated-set store (private per-library list + notifier prune).
+  initInsightsSet();
 
   // Insights hub: the chart-icon panel with the six visualizations.
   // register() also calls registerViews() to populate the view registry.
@@ -28,16 +36,26 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   // Create ztoolkit for every window.
   addon.data.ztoolkit = createZToolkit();
   InsightsHub.registerWindow(win);
+  ContextMenus.registerWindow(win);
 }
 
 async function onMainWindowUnload(win: _ZoteroTypes.MainWindow): Promise<void> {
+  ContextMenus.unregisterWindow(win);
   InsightsHub.unregisterWindow(win);
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
 }
 
 async function onShutdown(): Promise<void> {
+  for (const win of Zotero.getMainWindows()) {
+    try {
+      ContextMenus.unregisterWindow(win);
+    } catch {
+      /* ignore */
+    }
+  }
   InsightsHub.unregister();
+  unregisterInsightsSet();
 
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();

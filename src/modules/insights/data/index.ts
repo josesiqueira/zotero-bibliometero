@@ -27,7 +27,14 @@ import type {
   CoAuthorshipData,
   BipartiteData,
 } from "../types";
-import { gatherItems, toRecord, type ItemRecord } from "./extract";
+import type { InsightsSource } from "../set/types";
+import { insightsSet } from "../set/store";
+import {
+  gatherItems,
+  toRecord,
+  type ItemRecord,
+  type GatherSource,
+} from "./extract";
 import {
   buildCoAuthorship,
   buildBipartite,
@@ -56,7 +63,7 @@ export {
   buildComposition,
 } from "./aggregate";
 
-/** A fully-built, reusable bundle for one scope:library cache slot. */
+/** A fully-built, reusable bundle for one source:library cache slot. */
 interface ScopeBundle {
   libraryID: number;
   records: ItemRecord[];
@@ -73,12 +80,22 @@ interface ScopeBundle {
 
 export interface DataAccessorOptions {
   getWin: () => any;
-  getScope: () => VizScope;
+  /**
+   * The primary SOURCE control ("library" | "set"), read by the hub from pref
+   * `insights.source`. Preferred. When omitted the factory falls back to the
+   * legacy `getScope` getter so existing wiring keeps working.
+   */
+  getSource?: () => InsightsSource;
+  /**
+   * Legacy scope getter ("library" | "view" | "selection"). Kept so the hub can
+   * pass either getter; if both are present `getSource` wins.
+   */
+  getScope?: () => VizScope;
   getNetworkCap: () => number;
 }
 
 export type DataAccessors = VizDataAccessors & {
-  /** Drop every cached bundle (e.g. on scope change or explicit refresh). */
+  /** Drop every cached bundle (e.g. on source change or explicit refresh). */
   invalidate(): void;
   /** Notifier hook: invalidate when items / collections change. */
   onNotify(
@@ -86,6 +103,12 @@ export type DataAccessors = VizDataAccessors & {
     type: string,
     ids: Array<string | number>,
   ): void;
+  /**
+   * Optional teardown: detach the set-store subscription. Safe to call more than
+   * once. Existing callers that never call this simply keep the subscription for
+   * the accessor's lifetime.
+   */
+  dispose?(): void;
 };
 
 /** Slice a fully-ranked sources precompute to `limit`. */
@@ -125,15 +148,43 @@ function collectionName(id: number): string {
 }
 
 /**
- * Build the caching accessor object. The hub passes getters so scope / window /
+ * Build the caching accessor object. The hub passes getters so source / window /
  * network-cap can change between calls without re-creating the accessors.
+ *
+ * The active SOURCE is read from `getSource` when present, otherwise from the
+ * legacy `getScope`. For source "set" the bundle is rebuilt whenever the curated
+ * set changes (we subscribe to `insightsSet`).
  */
 export function createDataAccessors(
   opts: DataAccessorOptions,
 ): DataAccessors {
-  // Cache slot per `${scope}:${libraryID}`. A pending promise is stored while a
+  // Cache slot per `${source}:${libraryID}`. A pending promise is stored while a
   // bundle is being built so concurrent accessor calls share one gather pass.
   const cache = new Map<string, Promise<ScopeBundle>>();
+
+  /**
+   * Resolve the active source. Prefer the new `getSource` getter; fall back to
+   * the legacy `getScope`; default to "library" so the views always have data.
+   */
+  function resolveSource(): GatherSource {
+    try {
+      if (opts.getSource) {
+        const s = opts.getSource();
+        if (s === "library" || s === "set") return s;
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (opts.getScope) {
+        const s = opts.getScope();
+        if (s) return s;
+      }
+    } catch {
+      /* ignore */
+    }
+    return "library";
+  }
 
   /** Resolve the active library id without re-gathering items. */
   function currentLibraryID(): number {
@@ -154,19 +205,19 @@ export function createDataAccessors(
     }
   }
 
-  function slotKey(scope: VizScope, libraryID: number): string {
-    return `${scope}:${libraryID}`;
+  function slotKey(source: GatherSource, libraryID: number): string {
+    return `${source}:${libraryID}`;
   }
 
-  /** Build (or reuse) the bundle for the current scope. */
+  /** Build (or reuse) the bundle for the current source. */
   function getBundle(): Promise<ScopeBundle> {
-    const scope = opts.getScope();
+    const source = resolveSource();
     const libraryID = currentLibraryID();
-    const key = slotKey(scope, libraryID);
+    const key = slotKey(source, libraryID);
     const existing = cache.get(key);
     if (existing) return existing;
 
-    const built = buildBundle(scope).catch((err) => {
+    const built = buildBundle(source).catch((err) => {
       // On failure, drop the slot so a later call retries rather than caching
       // a rejected promise forever.
       cache.delete(key);
@@ -176,9 +227,9 @@ export function createDataAccessors(
     return built;
   }
 
-  async function buildBundle(scope: VizScope): Promise<ScopeBundle> {
+  async function buildBundle(source: GatherSource): Promise<ScopeBundle> {
     const win = opts.getWin?.();
-    const { items, libraryID } = await gatherItems(scope, win);
+    const { items, libraryID } = await gatherItems(source, win);
     const records = items.map((it) => toRecord(it));
 
     const perYear = buildPerYear(records, true);
@@ -204,12 +255,24 @@ export function createDataAccessors(
     };
   }
 
-  return {
+  // Rebuild datasets whenever the curated set changes. This keeps source "set"
+  // (and the "(N)" counts) live even though library/set share one accessor
+  // object. The library bundle is cheap to rebuild, so a blanket clear is fine.
+  let unsubscribeSet: (() => void) | null = null;
+  try {
+    unsubscribeSet = insightsSet.subscribe(() => {
+      cache.clear();
+    });
+  } catch {
+    unsubscribeSet = null;
+  }
+
+  const api: DataAccessors = {
     async items(): Promise<Zotero.Item[]> {
       // Re-gather live items so callers always get current Zotero objects
       // (the bundle only stores plain records).
       const win = opts.getWin?.();
-      const { items } = await gatherItems(opts.getScope(), win);
+      const { items } = await gatherItems(resolveSource(), win);
       return items;
     },
 
@@ -278,5 +341,17 @@ export function createDataAccessors(
         cache.clear();
       }
     },
+
+    dispose(): void {
+      try {
+        unsubscribeSet?.();
+      } catch {
+        /* ignore */
+      }
+      unsubscribeSet = null;
+      cache.clear();
+    },
   };
+
+  return api;
 }

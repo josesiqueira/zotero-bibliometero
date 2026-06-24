@@ -16,7 +16,7 @@ export type FluentMessageId =
   | 'pref-group-insights'
   | 'pref-help'
   | 'pref-insights-defaultView'
-  | 'pref-insights-scope'
+  | 'pref-insights-source'
   | 'pref-insights-theme'
   | 'pref-insights-topN'
   | 'pref-title'

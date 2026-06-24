@@ -14,6 +14,15 @@
  */
 
 import type { VizScope } from "../types";
+import type { InsightsSource } from "../set/types";
+import { insightsSet } from "../set/store";
+
+/**
+ * What `gatherItems` accepts. The dock's primary control is the SOURCE
+ * ("library" | "set"); the legacy scopes ("view" | "selection") are still
+ * understood for backward compatibility but are being dropped from the UI.
+ */
+export type GatherSource = InsightsSource | VizScope;
 
 /**
  * Flat record for one regular Zotero item. Everything aggregate.ts needs lives
@@ -255,46 +264,71 @@ function isUsableItem(it: any): boolean {
 }
 
 /**
- * Gather the regular items for a scope from the active window, reusing the same
- * scope semantics as the graph view:
+ * Resolve the active library id from the window's pane, falling back to the
+ * user library. Never throws (returns 0 in the worst case).
+ */
+function resolveLibraryID(win: any): number {
+  const ZoteroPane = win?.ZoteroPane;
+  try {
+    return (
+      ZoteroPane?.getSelectedLibraryID?.() ??
+      Zotero.Libraries.userLibraryID ??
+      0
+    );
+  } catch {
+    try {
+      return Zotero.Libraries.userLibraryID ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+}
+
+/**
+ * Gather the regular items for a SOURCE (or legacy scope) from the active
+ * window:
  *  - "library":   every item in the selected library (getAll(libID, true)).
- *  - "view":      the current collection / saved search rows, with a fallback
- *                 to whatever the items view currently holds.
- *  - "selection": the items currently selected in the pane.
+ *  - "set":       the curated Insights set for the selected library, resolved
+ *                 from `insightsSet.list(libraryID)` via Zotero.Items.get.
+ *  - "view":      (legacy) the current collection / saved search rows, with a
+ *                 fallback to whatever the items view currently holds.
+ *  - "selection": (legacy) the items currently selected in the pane.
  *
  * Returns the filtered items plus the resolved libraryID (used by callers as a
  * cache key). Every Zotero call is wrapped so a transient failure yields [].
  */
 export async function gatherItems(
-  scope: VizScope,
+  source: GatherSource,
   win: any,
 ): Promise<{ items: Zotero.Item[]; libraryID: number }> {
   const ZoteroPane = win?.ZoteroPane;
 
-  let libraryID = 0;
-  try {
-    libraryID =
-      ZoteroPane?.getSelectedLibraryID?.() ??
-      Zotero.Libraries.userLibraryID ??
-      0;
-  } catch {
-    try {
-      libraryID = Zotero.Libraries.userLibraryID ?? 0;
-    } catch {
-      libraryID = 0;
-    }
-  }
+  const libraryID = resolveLibraryID(win);
 
   let raw: Zotero.Item[] = [];
 
-  if (scope === "library") {
+  if (source === "set") {
+    try {
+      const ids = insightsSet.list(libraryID) || [];
+      if (ids.length) {
+        const got = Zotero.Items.get(ids as any);
+        // Zotero.Items.get returns a single item for a scalar id and an array
+        // for an array; we always pass an array, so normalize defensively.
+        raw = (Array.isArray(got) ? got : got ? [got] : []) as Zotero.Item[];
+      } else {
+        raw = [];
+      }
+    } catch {
+      raw = [];
+    }
+  } else if (source === "library") {
     try {
       const all = await Zotero.Items.getAll(libraryID, true);
       raw = (all as Zotero.Item[]) || [];
     } catch {
       raw = [];
     }
-  } else if (scope === "selection") {
+  } else if (source === "selection") {
     try {
       raw = (ZoteroPane?.getSelectedItems?.() as Zotero.Item[]) || [];
     } catch {

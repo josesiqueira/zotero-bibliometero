@@ -9,11 +9,12 @@ declare namespace _ZoteroTypes {
     PluginPrefsMap: {
       "hub.lastView": string;
       "hub.defaultView": string;
-      "hub.sidebarCollapsed": boolean;
       "hub.theme": string;
-      "hub.scope": string;
       "hub.topN": number;
       "hub.networkCap": number;
+      "insights.source": string;
+      "insights.dockHeight": number;
+      "insights.maximized": boolean;
     };
   }
 }

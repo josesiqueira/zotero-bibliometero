@@ -1,19 +1,22 @@
 /**
  * hub.ts - the Bibliometero "Insights" hub.
  *
- * Owns the chart/histogram toolbar button, the dedicated "Insights" tab, the
- * collapsible sidebar of six views, the topbar (active label + per-view controls
- * + Export PNG/SVG + Maximize), the shared status line, and the live VizModule.
+ * Owns the chart/histogram toolbar button, the Insights SHELL (a horizontal nav
+ * tab-strip + a topbar with source toggle, Export PNG/SVG and Maximize/Restore,
+ * a viewport, and a status line), the live VizModule, and the host it is mounted
+ * into. The shell is host-agnostic: buildShell(host) mounts it into whichever
+ * host (bottom dock or pop-out tab) is active, so switching hosts keeps ONE
+ * active view and ONE state.
  *
- * Per-window state mirrors GraphViewFactory: a Map<MainWindow,WinState>, a lazy
- * Zotero_Tabs.add({ data:{icon:""} }), a CSS <link> injected once per window, a
- * global notifier debounced into onDataChange, a ResizeObserver on the viewport,
- * and a matchMedia listener (theme.ts) that reapplies the theme class. Everything
- * is torn down in unregister / unregisterWindow.
+ * Default host is the resizable bottom dock (DockHost) inside the library view.
+ * Maximize destroys the dock shell and rebuilds the same shell in a full Zotero
+ * tab (TabHost); Restore returns it to the dock. The active host is persisted in
+ * pref `insights.maximized`.
  *
- * Rendering is delegated: the hub never draws. VizRegistry.create(id) yields a
- * fresh VizModule; the hub builds its VizContext (context.ts) and calls mount /
- * onResize / onThemeChange / onDataChange / exportPNG / exportSVG / destroy.
+ * Per-window state is a Map<MainWindow, WinState>. Rendering is delegated:
+ * VizRegistry.create(id) yields a fresh VizModule; the hub builds its VizContext
+ * (context.ts) and drives mount / onResize / onThemeChange / onDataChange /
+ * export / destroy. Everything is torn down in unregister / unregisterWindow.
  */
 
 import type { VizContext, VizModule } from "./types";
@@ -28,8 +31,11 @@ import {
 } from "./theme";
 import { saveExport } from "./save";
 import { getPrefRaw, setPrefRaw } from "../../utils/prefs";
+import { DockHost } from "./hosts/dock";
+import { TabHost } from "./hosts/tab";
+import type { HostController } from "./hosts/types";
+import { insightsSet } from "./set/store";
 
-const TAB_TYPE = () => `${addon.data.config.addonRef}-insights`;
 const BUTTON_ID = "bibliometero-insights-button";
 const CSS_LINK_ID = "bibliometero-insights-css";
 const DATA_DEBOUNCE_MS = 250;
@@ -48,22 +54,26 @@ function svgDataUri(svg: string): string {
   return `url('data:image/svg+xml,${encodeURIComponent(svg)}')`;
 }
 
-/** Per-window hub state. Heavy DOM is created lazily on first tab open. */
+/** Per-window hub state. The shell DOM is rebuilt whenever the host changes. */
 interface WinState {
   win: _ZoteroTypes.MainWindow;
-  tabId: string | null;
-  container: HTMLElement | null;
+  /** The host the shell currently lives in (dock or tab), or null when closed. */
+  host: HostController | null;
   root: HTMLElement | null;
-  sidebar: HTMLElement | null;
+  navStrip: HTMLElement | null;
   navButtons: Map<string, HTMLButtonElement>;
-  topbarLabel: HTMLElement | null;
   controlsSlot: HTMLElement | null;
+  exportButtons: HTMLElement[];
+  sourceLibraryBtn: HTMLButtonElement | null;
+  sourceSetBtn: HTMLButtonElement | null;
+  hostToggleBtn: HTMLButtonElement | null;
   viewport: HTMLElement | null;
   statusEl: HTMLElement | null;
   current: VizModule | null;
   activeId: string | null;
   resizeObs: ResizeObserver | null;
   themeWatcher: ThemeWatcher | null;
+  setUnsub: (() => void) | null;
   destroyed: boolean;
 }
 
@@ -72,6 +82,9 @@ export const InsightsHub = (() => {
   const cssLinks = new WeakMap<_ZoteroTypes.MainWindow, HTMLLinkElement>();
   let notifierID: string | null = null;
   let dataTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const dockHost = new DockHost();
+  const tabHost = new TabHost();
 
   // ---- prefs helpers -------------------------------------------------
 
@@ -103,17 +116,34 @@ export const InsightsHub = (() => {
     return VizRegistry.has(id) ? id : defaultView();
   }
 
+  function source(): "library" | "set" {
+    return prefStr("insights.source", "library") === "set" ? "set" : "library";
+  }
+
+  function setSource(v: "library" | "set"): void {
+    try {
+      setPrefRaw("insights.source", v);
+    } catch {
+      /* ignore */
+    }
+  }
+
   // ---- lifecycle -----------------------------------------------------
 
   function register(): void {
     registerViews(); // idempotent
-    // Surface the read-only test hooks now that the addon instance exists (doing
-    // this at module-eval time fails because `addon` is not assigned yet).
     try {
       (addon.data as any).test = test;
     } catch {
       /* ignore */
     }
+
+    // Maximize (dock) -> pop out to a tab; Restore (tab) -> back to the dock.
+    dockHost.setMaximizeHandler((win) => maximize(win));
+    tabHost.setRestoreHandler((win) => restore(win));
+    // If the user closes the pop-out tab via its X, drop our shell cleanly.
+    tabHost.setClosedHandler((win) => onTabClosed(win));
+
     if (notifierID) return;
 
     const callback = {
@@ -149,6 +179,16 @@ export const InsightsHub = (() => {
       teardownState(st);
       states.delete(win);
     }
+    try {
+      dockHost.dispose(win);
+    } catch {
+      /* ignore */
+    }
+    try {
+      tabHost.dispose(win);
+    } catch {
+      /* ignore */
+    }
     removeButton(win);
     removeCSS(win);
   }
@@ -169,6 +209,16 @@ export const InsightsHub = (() => {
     for (const st of states.values()) teardownState(st);
     states.clear();
     for (const win of Zotero.getMainWindows()) {
+      try {
+        dockHost.dispose(win);
+      } catch {
+        /* ignore */
+      }
+      try {
+        tabHost.dispose(win);
+      } catch {
+        /* ignore */
+      }
       removeButton(win);
       removeCSS(win);
     }
@@ -177,19 +227,22 @@ export const InsightsHub = (() => {
   function makeState(win: _ZoteroTypes.MainWindow): WinState {
     return {
       win,
-      tabId: null,
-      container: null,
+      host: null,
       root: null,
-      sidebar: null,
+      navStrip: null,
       navButtons: new Map(),
-      topbarLabel: null,
       controlsSlot: null,
+      exportButtons: [],
+      sourceLibraryBtn: null,
+      sourceSetBtn: null,
+      hostToggleBtn: null,
       viewport: null,
       statusEl: null,
       current: null,
       activeId: null,
       resizeObs: null,
       themeWatcher: null,
+      setUnsub: null,
       destroyed: false,
     };
   }
@@ -241,7 +294,7 @@ export const InsightsHub = (() => {
     btn.setAttribute("tooltiptext", "Insights");
     btn.setAttribute("aria-label", "Insights");
     btn.style.listStyleImage = svgDataUri(HISTOGRAM_SVG);
-    btn.addEventListener("command", () => openTab(win));
+    btn.addEventListener("command", () => toggleDock(win));
 
     // Anchor before Stylero's theme toggle if present, else the tabs menu.
     const anchor =
@@ -262,66 +315,114 @@ export const InsightsHub = (() => {
     }
   }
 
-  // ---- tab open / mount ----------------------------------------------
+  // ---- host open / toggle --------------------------------------------
 
-  function openTab(win: _ZoteroTypes.MainWindow): void {
+  /** Toolbar-button action: toggle the bottom dock (close if open, else open). */
+  function toggleDock(win: _ZoteroTypes.MainWindow): void {
     let st = states.get(win);
     if (!st) {
       st = makeState(win);
       states.set(win, st);
     }
 
-    const Tabs = (win as any).Zotero_Tabs;
-    if (!Tabs || typeof Tabs.add !== "function") {
-      ztoolkit.log("[Bibliometero Insights] Zotero_Tabs.add unavailable");
+    // If Insights is currently popped out to a tab, bring it back to the dock.
+    if (st.host && st.host.kind() === "tab") {
+      restore(win);
       return;
     }
 
-    if (st.tabId) {
+    if (dockHost.isOpen(win) && st.host) {
+      closeShell(st);
+      return;
+    }
+    openIn(st, dockHost);
+  }
+
+  /** Build/mount the shell into the given host (dock or tab). */
+  function openIn(st: WinState, host: HostController): void {
+    const mount = host.open(st.win);
+    if (!mount) {
+      ztoolkit.log("[Bibliometero Insights] host open returned no mount");
+      return;
+    }
+    st.host = host;
+    buildShell(st, mount.body, mount.header);
+  }
+
+  /** Tear the shell down but leave the host chrome to its own close(). */
+  function closeShell(st: WinState): void {
+    const host = st.host;
+    destroyActive(st);
+    detachObservers(st);
+    clearShellRefs(st);
+    st.host = null;
+    if (host) {
       try {
-        Tabs.select(st.tabId);
-        return;
+        host.close(st.win);
       } catch {
-        st.tabId = null;
+        /* ignore */
       }
     }
+  }
 
-    let result: { id: string; container: HTMLElement };
-    try {
-      result = Tabs.add({
-        type: TAB_TYPE(),
-        title: "Insights",
-        select: true,
-        // Zotero 9 reads tab.data.icon during select(); omitting throws.
-        data: { icon: "" },
-        onClose: () => onTabClosed(win),
-      } as any);
-    } catch (e) {
-      ztoolkit.log("[Bibliometero Insights] Tabs.add failed", e);
-      return;
-    }
-
-    st.tabId = result.id;
-    st.container = result.container;
-    mountShell(st);
+  function clearShellRefs(st: WinState): void {
+    st.root = null;
+    st.navStrip = null;
+    st.navButtons.clear();
+    st.controlsSlot = null;
+    st.exportButtons = [];
+    st.sourceLibraryBtn = null;
+    st.sourceSetBtn = null;
+    st.hostToggleBtn = null;
+    st.viewport = null;
+    st.statusEl = null;
   }
 
   function onTabClosed(win: _ZoteroTypes.MainWindow): void {
     const st = states.get(win);
     if (!st) return;
+    // The tab host already dropped its chrome; just drop our shell + state so
+    // the next toolbar click reopens the dock.
     destroyActive(st);
     detachObservers(st);
-    st.tabId = null;
-    st.container = null;
-    st.root = null;
-    st.sidebar = null;
-    st.navButtons.clear();
-    st.topbarLabel = null;
-    st.controlsSlot = null;
-    st.viewport = null;
-    st.statusEl = null;
-    st.activeId = null;
+    clearShellRefs(st);
+    st.host = null;
+    setMaximizedPref(false);
   }
+
+  // ---- maximize / restore --------------------------------------------
+
+  function setMaximizedPref(v: boolean): void {
+    try {
+      setPrefRaw("insights.maximized", v);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** Dock -> tab. Destroy the dock shell, rebuild in a tab, re-activate same view. */
+  function maximize(win: _ZoteroTypes.MainWindow): void {
+    const st = states.get(win);
+    if (!st) return;
+    const keepId = st.activeId || lastView();
+    closeShell(st);
+    openIn(st, tabHost);
+    setMaximizedPref(true);
+    void activate(st, keepId);
+  }
+
+  /** Tab -> dock. Destroy the tab shell, rebuild in the dock, re-activate. */
+  function restore(win: _ZoteroTypes.MainWindow): void {
+    const st = states.get(win);
+    if (!st) return;
+    const keepId = st.activeId || lastView();
+    closeShell(st);
+    openIn(st, dockHost);
+    setMaximizedPref(false);
+    void activate(st, keepId);
+  }
+
+  // ---- shell construction (host-agnostic) ----------------------------
 
   function el(
     doc: Document,
@@ -338,55 +439,72 @@ export const InsightsHub = (() => {
     return node;
   }
 
-  function mountShell(st: WinState): void {
+  /**
+   * Build the shell into the host's header + body. The header gets the
+   * horizontal nav tab-strip (left) and the source toggle + export + host
+   * toggle (right). The body gets the viewport + status line.
+   */
+  function buildShell(
+    st: WinState,
+    body: HTMLElement,
+    header: HTMLElement,
+  ): void {
     const doc = st.win.document;
-    const container = st.container!;
-    container.textContent = "";
+    try {
+      header.textContent = "";
+      body.textContent = "";
+    } catch {
+      /* ignore */
+    }
 
-    const root = el(doc, "div", "bm-hub-root");
+    // Theme the host root (both header + body inherit through a shared class on
+    // the body's ancestor; we toggle on both for safety).
+    const root = (header.parentElement as HTMLElement) || header;
     st.root = root;
     applyThemeClass(root, resolveTheme(st.win));
 
-    // ---- sidebar ----
-    const sidebar = el(doc, "div", "bm-hub-sidebar");
-    st.sidebar = sidebar;
-    if (prefBool("hub.sidebarCollapsed", false)) {
-      sidebar.classList.add("bm-collapsed");
-    }
-
-    const brand = el(doc, "div", "bm-hub-brand", "Insights");
-    sidebar.appendChild(brand);
-
-    const nav = el(doc, "div", "bm-hub-nav");
+    // ---- header: nav tab-strip (left) ----
+    const navStrip = el(doc, "div", "bm-nav-strip");
+    st.navStrip = navStrip;
     st.navButtons.clear();
     for (const entry of VizRegistry.list()) {
-      const btn = el(doc, "button", "bm-hub-nav-btn") as HTMLButtonElement;
+      const btn = el(doc, "button", "bm-nav-tab") as HTMLButtonElement;
       btn.setAttribute("data-view-id", entry.id);
       btn.setAttribute("title", entry.label);
-      const labelSpan = el(doc, "span", "bm-hub-nav-label", entry.label);
-      btn.appendChild(labelSpan);
+      btn.textContent = entry.label;
       btn.addEventListener("click", () => void activate(st, entry.id));
-      nav.appendChild(btn);
+      navStrip.appendChild(btn);
       st.navButtons.set(entry.id, btn);
     }
-    sidebar.appendChild(nav);
-    root.appendChild(sidebar);
+    header.appendChild(navStrip);
 
-    // ---- main ----
-    const main = el(doc, "div", "bm-hub-main");
-
-    const topbar = el(doc, "div", "bm-hub-topbar");
-    const topbarLabel = el(doc, "div", "bm-hub-active-label");
-    st.topbarLabel = topbarLabel;
-    topbar.appendChild(topbarLabel);
-
+    // ---- header: per-view controls slot ----
     const controlsSlot = el(doc, "div", "bm-hub-controls");
     st.controlsSlot = controlsSlot;
-    topbar.appendChild(controlsSlot);
+    header.appendChild(controlsSlot);
 
     const spacer = el(doc, "div", "bm-hub-topbar-spacer");
-    topbar.appendChild(spacer);
+    header.appendChild(spacer);
 
+    // ---- header: source toggle (segmented) ----
+    const sourceWrap = el(doc, "div", "bm-source-toggle");
+    const srcLib = el(
+      doc,
+      "button",
+      "bm-seg-btn",
+      "Whole library",
+    ) as HTMLButtonElement;
+    srcLib.addEventListener("click", () => onSourceChange(st, "library"));
+    const srcSet = el(doc, "button", "bm-seg-btn") as HTMLButtonElement;
+    srcSet.addEventListener("click", () => onSourceChange(st, "set"));
+    sourceWrap.appendChild(srcLib);
+    sourceWrap.appendChild(srcSet);
+    header.appendChild(sourceWrap);
+    st.sourceLibraryBtn = srcLib;
+    st.sourceSetBtn = srcSet;
+    updateSourceUI(st);
+
+    // ---- header: export buttons ----
     const exportPng = el(
       doc,
       "button",
@@ -394,7 +512,7 @@ export const InsightsHub = (() => {
       "Export PNG",
     ) as HTMLButtonElement;
     exportPng.addEventListener("click", () => void doExport(st, "png"));
-    topbar.appendChild(exportPng);
+    header.appendChild(exportPng);
 
     const exportSvg = el(
       doc,
@@ -403,35 +521,74 @@ export const InsightsHub = (() => {
       "Export SVG",
     ) as HTMLButtonElement;
     exportSvg.addEventListener("click", () => void doExport(st, "svg"));
-    topbar.appendChild(exportSvg);
+    header.appendChild(exportSvg);
+    st.exportButtons = [exportPng, exportSvg];
 
-    const maximize = el(
+    // ---- header: host toggle (Maximize in dock / Restore in tab) ----
+    const isTab = st.host?.kind() === "tab";
+    const hostToggle = el(
       doc,
       "button",
-      "bm-hub-btn bm-hub-maximize",
-      "Maximize",
+      "bm-hub-btn bm-host-toggle",
+      isTab ? "Restore" : "Maximize",
     ) as HTMLButtonElement;
-    maximize.setAttribute("title", "Collapse / expand sidebar");
-    maximize.addEventListener("click", () => toggleSidebar(st));
-    topbar.appendChild(maximize);
+    hostToggle.setAttribute(
+      "title",
+      isTab ? "Restore to bottom dock" : "Pop out to a full tab",
+    );
+    hostToggle.addEventListener("click", () => {
+      if (st.host?.kind() === "tab") restore(st.win);
+      else maximize(st.win);
+    });
+    header.appendChild(hostToggle);
+    st.hostToggleBtn = hostToggle;
 
-    main.appendChild(topbar);
-
+    // ---- body: viewport + status ----
     const viewport = el(doc, "div", "bm-hub-viewport");
     st.viewport = viewport;
-    main.appendChild(viewport);
+    body.appendChild(viewport);
 
     const status = el(doc, "div", "bm-hub-status");
     st.statusEl = status;
-    main.appendChild(status);
-
-    root.appendChild(main);
-    container.appendChild(root);
+    body.appendChild(status);
 
     attachObservers(st);
 
     // Activate the persisted view (default coauthorship).
     void activate(st, lastView());
+  }
+
+  // ---- source toggle --------------------------------------------------
+
+  function onSourceChange(st: WinState, next: "library" | "set"): void {
+    if (source() === next) return;
+    setSource(next);
+    updateSourceUI(st);
+    // Re-fetch + re-activate the current view for the new source.
+    void activate(st, st.activeId || lastView());
+  }
+
+  function curatedCount(st: WinState): number {
+    try {
+      const libraryID =
+        (st.win as any).ZoteroPane?.getSelectedLibraryID?.() ??
+        Zotero.Libraries.userLibraryID ??
+        0;
+      return insightsSet.count(libraryID);
+    } catch {
+      return 0;
+    }
+  }
+
+  function updateSourceUI(st: WinState): void {
+    const cur = source();
+    if (st.sourceLibraryBtn) {
+      st.sourceLibraryBtn.classList.toggle("bm-active", cur === "library");
+    }
+    if (st.sourceSetBtn) {
+      st.sourceSetBtn.textContent = `Curated set (${curatedCount(st)})`;
+      st.sourceSetBtn.classList.toggle("bm-active", cur === "set");
+    }
   }
 
   // ---- view activation ------------------------------------------------
@@ -453,13 +610,13 @@ export const InsightsHub = (() => {
     st.current = mod;
     st.activeId = id;
 
-    const entry = VizRegistry.list().find((e) => e.id === id);
-    if (st.topbarLabel) st.topbarLabel.textContent = entry?.label || id;
-
     // Highlight nav.
     for (const [vid, btn] of st.navButtons) {
       btn.classList.toggle("bm-active", vid === id);
     }
+
+    // Export only makes sense for drawn views; hide it for the "manage" Set view.
+    setExportVisible(st, mod.kind !== "manage");
 
     const ctx: VizContext = buildContext({
       win: st.win,
@@ -475,13 +632,18 @@ export const InsightsHub = (() => {
       ztoolkit.log("[Bibliometero Insights] view mount failed", id, e);
     }
 
-    // Persist + initial size after mount.
     try {
       setPrefRaw("hub.lastView", id);
     } catch {
       /* ignore */
     }
     notifyResize(st);
+  }
+
+  function setExportVisible(st: WinState, visible: boolean): void {
+    for (const b of st.exportButtons) {
+      b.style.display = visible ? "" : "none";
+    }
   }
 
   function destroyActive(st: WinState): void {
@@ -498,23 +660,7 @@ export const InsightsHub = (() => {
   function onFocusAuthor(st: WinState, key: string, label: string): void {
     void label;
     void key;
-    // Cross-link: switch to the co-authorship view. (The view reads selection
-    // itself; we just bring it to front.)
     void activate(st, "coauthorship");
-  }
-
-  // ---- sidebar collapse ----------------------------------------------
-
-  function toggleSidebar(st: WinState): void {
-    if (!st.sidebar) return;
-    const collapsed = st.sidebar.classList.toggle("bm-collapsed");
-    try {
-      setPrefRaw("hub.sidebarCollapsed", collapsed);
-    } catch {
-      /* ignore */
-    }
-    // Layout changed; let the view re-measure on the next frame.
-    st.win.requestAnimationFrame(() => notifyResize(st));
   }
 
   // ---- export ---------------------------------------------------------
@@ -535,7 +681,6 @@ export const InsightsHub = (() => {
   // ---- observers ------------------------------------------------------
 
   function attachObservers(st: WinState): void {
-    // ResizeObserver on the viewport.
     try {
       const ROCtor = (st.win as any).ResizeObserver as
         | (new (cb: () => void) => ResizeObserver)
@@ -549,7 +694,6 @@ export const InsightsHub = (() => {
       st.resizeObs = null;
     }
 
-    // matchMedia theme watcher: reapply class + notify active view.
     st.themeWatcher = attachThemeWatcher(st.win, () => {
       if (st.root) applyThemeClass(st.root, resolveTheme(st.win));
       try {
@@ -558,6 +702,23 @@ export const InsightsHub = (() => {
         ztoolkit.log("[Bibliometero Insights] onThemeChange failed", e);
       }
     });
+
+    // Live set count + refresh when the curated set changes while source=set.
+    try {
+      st.setUnsub = insightsSet.subscribe(() => {
+        if (st.destroyed) return;
+        updateSourceUI(st);
+        if (source() === "set") {
+          try {
+            st.current?.onDataChange?.();
+          } catch (e) {
+            ztoolkit.log("[Bibliometero Insights] set onDataChange failed", e);
+          }
+        }
+      });
+    } catch {
+      st.setUnsub = null;
+    }
   }
 
   function detachObservers(st: WinState): void {
@@ -572,6 +733,14 @@ export const InsightsHub = (() => {
     if (st.themeWatcher) {
       st.themeWatcher.detach();
       st.themeWatcher = null;
+    }
+    if (st.setUnsub) {
+      try {
+        st.setUnsub();
+      } catch {
+        /* ignore */
+      }
+      st.setUnsub = null;
     }
   }
 
@@ -593,16 +762,13 @@ export const InsightsHub = (() => {
   function onNotify(event: string, type: string): void {
     if (!addon?.data?.alive) return;
     if (type === "tab" && event === "select") {
-      // A tab became active; re-measure the (possibly previously zero-sized)
-      // viewport for whichever window owns that tab.
       for (const st of states.values()) {
-        if (st.tabId && !st.destroyed) {
+        if (st.host && !st.destroyed) {
           st.win.requestAnimationFrame(() => notifyResize(st));
         }
       }
       return;
     }
-    // item/collection add/modify/delete/trash -> data is stale.
     scheduleDataChange();
   }
 
@@ -610,11 +776,10 @@ export const InsightsHub = (() => {
     if (dataTimer) clearTimeout(dataTimer);
     dataTimer = setTimeout(() => {
       dataTimer = null;
-      // The insights/data module owns its own notifier-driven cache
-      // invalidation; the hub only re-renders the active view.
       for (const st of states.values()) {
-        if (st.destroyed || !st.tabId) continue;
+        if (st.destroyed || !st.host) continue;
         try {
+          updateSourceUI(st);
           st.current?.onDataChange?.();
         } catch (e) {
           ztoolkit.log("[Bibliometero Insights] onDataChange failed", e);
@@ -627,24 +792,18 @@ export const InsightsHub = (() => {
 
   function teardownState(st: WinState): void {
     st.destroyed = true;
+    const host = st.host;
     destroyActive(st);
     detachObservers(st);
-    if (st.tabId) {
+    if (host) {
       try {
-        (st.win as any).Zotero_Tabs?.close?.(st.tabId);
+        host.close(st.win);
       } catch {
         /* ignore */
       }
-      st.tabId = null;
     }
-    st.container = null;
-    st.root = null;
-    st.sidebar = null;
-    st.navButtons.clear();
-    st.topbarLabel = null;
-    st.controlsSlot = null;
-    st.viewport = null;
-    st.statusEl = null;
+    st.host = null;
+    clearShellRefs(st);
     st.activeId = null;
   }
 
@@ -652,7 +811,7 @@ export const InsightsHub = (() => {
 
   function activeStateForTest(): WinState | null {
     for (const st of states.values()) {
-      if (st.tabId && !st.destroyed) return st;
+      if (st.host && !st.destroyed) return st;
     }
     return null;
   }
@@ -698,6 +857,18 @@ export const InsightsHub = (() => {
       const st = activeStateForTest();
       return viewHooks(st).getTooltipText?.(...args);
     },
+    /** Host introspection for the live harness. */
+    getHostKind(): "dock" | "tab" | null {
+      return activeStateForTest()?.host?.kind() ?? null;
+    },
+    maximize(): void {
+      const st = activeStateForTest();
+      if (st) maximize(st.win);
+    },
+    restore(): void {
+      const st = activeStateForTest();
+      if (st) restore(st.win);
+    },
   };
 
   // Surface read-only test hooks on the addon instance data.
@@ -712,7 +883,9 @@ export const InsightsHub = (() => {
     registerWindow,
     unregisterWindow,
     unregister,
-    openTab,
+    /** Toolbar action: toggle the bottom dock. (Name kept for hooks/tests.) */
+    openTab: toggleDock,
+    toggleDock,
     test,
   };
 })();

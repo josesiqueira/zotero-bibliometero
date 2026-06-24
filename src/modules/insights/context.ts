@@ -1,11 +1,14 @@
 /**
  * context.ts - builds the VizContext handed to every view at mount.
  *
- * Wires the four environment concerns the contract (types.ts) requires:
+ * Wires the environment concerns the contract (types.ts) requires:
  *  - theme(): current ThemeInfo (re-read live so onThemeChange picks up flips).
- *  - scope(): the `hub.scope` pref (library/view/selection).
+ *  - source(): the `insights.source` pref ("library" | "set"). This replaces the
+ *    old scope() concept. The data layer treats the source as its cache key, so
+ *    we route source() through the accessors' getScope getter. scope() is kept
+ *    only to satisfy the frozen VizContext contract (no view reads it).
  *  - data: accessors created by insights/data (createDataAccessors), parameterized
- *    by the active window, the current scope, and the network node cap pref.
+ *    by the active window, the current source, and the network node cap pref.
  *  - open/select/focus callbacks + per-view namespaced prefs + status + controls.
  *
  * The hub owns the active view id, the status element, and the controls slot;
@@ -20,6 +23,7 @@ import type {
   ThemeInfo,
   VizDataAccessors,
 } from "./types";
+import type { InsightsSource } from "./set/types";
 import { paletteFor, resolveTheme } from "./theme";
 import { getPrefRaw, setPrefRaw } from "../../utils/prefs";
 import { createDataAccessors } from "./data";
@@ -37,10 +41,11 @@ export interface ContextDeps {
   focusAuthor(authorKey: string, label: string): void;
 }
 
-function readScope(): VizScope {
+/** The active data source: "library" (default) or the curated "set". */
+function readSource(): InsightsSource {
   try {
-    const v = getPrefRaw("hub.scope");
-    if (v === "view" || v === "selection") return v;
+    const v = getPrefRaw("insights.source");
+    if (v === "set") return "set";
   } catch {
     /* ignore */
   }
@@ -132,7 +137,10 @@ export function buildContext(deps: ContextDeps): VizContext {
 
   const data: VizDataAccessors = createDataAccessors({
     getWin: () => win,
-    getScope: () => readScope(),
+    // The data layer keys its cache on the source ("library" | "set"); pass the
+    // source through the (frozen) getScope getter. Agent 5's data layer reads
+    // `insights.source` for "set"; treating source as the scope key is by design.
+    getScope: () => readSource() as unknown as VizScope,
     getNetworkCap: () => readNetworkCap(),
   });
 
@@ -142,8 +150,9 @@ export function buildContext(deps: ContextDeps): VizContext {
     theme(): ThemeInfo {
       return paletteFor(resolveTheme(win));
     },
+    // scope() kept only for the frozen VizContext contract (unused by views).
     scope(): VizScope {
-      return readScope();
+      return "library";
     },
     data,
     openItem(itemId: number) {
@@ -165,6 +174,11 @@ export function buildContext(deps: ContextDeps): VizContext {
       ztoolkit.log(...args);
     },
   };
+
+  // source() is the real accessor going forward. It is attached post-literal
+  // because the frozen VizContext type does not (yet) declare it; views that
+  // need the source read it via (ctx as any).source().
+  (ctx as unknown as { source(): InsightsSource }).source = () => readSource();
 
   return ctx;
 }

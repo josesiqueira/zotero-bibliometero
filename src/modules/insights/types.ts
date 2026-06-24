@@ -220,7 +220,7 @@ export interface VizContext {
  * VizModule — one per view
  * ------------------------------------------------------------------------- */
 
-export type VizKind = "network" | "chart";
+export type VizKind = "network" | "chart" | "manage";
 
 export interface VizModule {
   readonly id: string; // stable; also prefs namespace

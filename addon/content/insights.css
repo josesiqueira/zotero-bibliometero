@@ -1,18 +1,54 @@
 /*
- * insights.css - chrome for the Bibliometero "Insights" hub tab.
+ * insights.css - chrome for the Bibliometero "Insights" shell.
  *
- * Injected at runtime by InsightsHub.registerWindow via a <link>. Everything is
- * scoped under .bm-hub-root so it never leaks into the rest of the Zotero UI.
- * The concrete light/dark token sets live on .bibliometero-theme-light /
- * .bibliometero-theme-dark (names reused from graphView.css so views can share
- * the same variables). Views paint their own canvas/SVG; these rules style only
- * the shell (sidebar, topbar, viewport frame, status bar).
+ * Injected at runtime by InsightsHub.registerWindow via a <link>. The shell now
+ * lives in one of two hosts: a resizable bottom DOCK inside the library view
+ * (#bibliometero-dock, the default) or a pop-out full TAB (.bm-host-tab). Both
+ * render the same column: a header bar (.bm-host-header) with a HORIZONTAL nav
+ * tab-strip + source toggle + export + maximize/restore, over a scrollable body
+ * (.bm-host-body) holding the viewport + status line.
+ *
+ * Everything is scoped under .bm-host / #bibliometero-dock so it never leaks
+ * into the rest of the Zotero UI. The concrete light/dark token sets live on
+ * .bibliometero-theme-light / .bibliometero-theme-dark (names reused from
+ * graphView.css so views share the same variables).
  */
 
-/* ---- root layout ---- */
-.bm-hub-root {
+/* ---- dock container (bottom dock host) ---- */
+#bibliometero-dock {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 120px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-top: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
+  background: var(--bibliometero-chart-bg, #fafafa);
+  color: var(--bibliometero-chart-fg, #222);
+  font: menu;
+  font-size: 12px;
+}
+
+/* ---- resize handle (manual pointer-drag) ---- */
+.bm-dock-handle {
+  flex: 0 0 auto;
+  height: 6px;
+  cursor: ns-resize;
+  background: var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
+  opacity: 0.5;
+  transition: opacity 0.12s ease;
+}
+
+.bm-dock-handle:hover,
+.bm-dock-handle.bm-dragging {
+  opacity: 1;
+  background: var(--bibliometero-graph-accent, #1a73e8);
+}
+
+/* ---- generic host (tab host root, shared host body/header) ---- */
+.bm-host {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -21,117 +57,110 @@
   font-size: 12px;
 }
 
-/* ---- sidebar ---- */
-.bm-hub-sidebar {
-  flex: 0 0 200px;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border-inline-end: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
-  background: var(--bibliometero-graph-control-bg, rgba(128, 128, 128, 0.05));
-  overflow: hidden;
-  transition: flex-basis 0.12s ease;
+.bm-host.bm-host-tab {
+  background: var(--bibliometero-chart-bg, #fafafa);
+  color: var(--bibliometero-chart-fg, #222);
 }
 
-.bm-hub-sidebar.bm-collapsed {
-  flex-basis: 44px;
-}
-
-.bm-hub-brand {
+/* ---- header bar (nav strip + topbar controls) ---- */
+.bm-host-header {
   flex: 0 0 auto;
-  padding: 12px 14px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  min-height: 32px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
 }
 
-.bm-hub-sidebar.bm-collapsed .bm-hub-brand {
-  font-size: 0; /* hide the word; rail only */
-}
-
-.bm-hub-nav {
+/* ---- scrollable body (viewport + status) ---- */
+.bm-host-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px 6px;
+  overflow: auto;
 }
 
-.bm-hub-nav-btn {
+/* ---- horizontal nav tab-strip ---- */
+.bm-nav-strip {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+.bm-nav-tab {
   appearance: none;
   border: none;
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: start;
-  padding: 7px 10px;
+  padding: 5px 10px;
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.bm-hub-nav-btn:hover {
+.bm-nav-tab:hover {
   background: var(--bibliometero-graph-hover, rgba(128, 128, 128, 0.15));
 }
 
-.bm-hub-nav-btn.bm-active {
+.bm-nav-tab.bm-active {
   background: var(--bibliometero-graph-accent, #1a73e8);
   color: #fff;
 }
 
-.bm-hub-sidebar.bm-collapsed .bm-hub-nav-label {
-  /* In the collapsed rail, show only a leading glyph slot. */
-  font-size: 0;
-}
-
-.bm-hub-sidebar.bm-collapsed .bm-hub-nav-btn {
-  text-align: center;
-  padding: 7px 4px;
-}
-
-/* ---- main column ---- */
-.bm-hub-main {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ---- topbar ---- */
-.bm-hub-topbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
-}
-
-.bm-hub-active-label {
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
+/* ---- per-view controls slot ---- */
 .bm-hub-controls {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .bm-hub-topbar-spacer {
   flex: 1 1 auto;
 }
 
+/* ---- source toggle (segmented) ---- */
+.bm-source-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.4));
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.bm-seg-btn {
+  appearance: none;
+  border: none;
+  background: var(--bibliometero-graph-control-bg, rgba(128, 128, 128, 0.08));
+  color: inherit;
+  font: inherit;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bm-seg-btn + .bm-seg-btn {
+  border-inline-start: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.4));
+}
+
+.bm-seg-btn:hover {
+  background: var(--bibliometero-graph-hover, rgba(128, 128, 128, 0.18));
+}
+
+.bm-seg-btn.bm-active {
+  background: var(--bibliometero-graph-accent, #1a73e8);
+  color: #fff;
+}
+
+/* ---- generic shell buttons (export, maximize/restore) ---- */
 .bm-hub-btn {
   appearance: none;
   font: inherit;
@@ -142,6 +171,7 @@
   padding: 4px 10px;
   cursor: pointer;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .bm-hub-btn:hover {
@@ -152,7 +182,7 @@
 .bm-hub-viewport {
   position: relative;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 160px;
   overflow: hidden;
 }
 

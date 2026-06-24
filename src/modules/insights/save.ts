@@ -1,11 +1,16 @@
 /**
  * save.ts - export download for Insights views.
  *
- * Given an ExportResult (PNG bytes as a Blob, or SVG markup as text), prompts
- * the user with a native file picker seeded with a sensible filename, then
- * writes the bytes via Zotero.File.putContentsAsync. If the picker API is
- * unavailable (or the user is on a build where it shifted), it falls back to
- * writing into the Zotero data directory and logs the path.
+ * Given an ExportResult (PNG bytes as a Blob, or SVG markup as text), shows
+ * Zotero's native save dialog and writes the file the user chooses.
+ *
+ * IMPORTANT (Zotero 9 / Firefox 140): the file dialog MUST go through Zotero's
+ * own wrapped FilePicker module:
+ *   ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs")
+ * Raw `nsIFilePicker` no longer works the old way (its `init` now needs a
+ * BrowsingContext, not a window, and `show()` is async via `open(callback)`).
+ * The wrapper handles both: `init(win, title, mode)` uses `win.browsingContext`
+ * internally and `show()` returns a Promise. `fp.file` is the chosen path string.
  */
 
 import type { ExportResult } from "./types";
@@ -19,11 +24,11 @@ function suggestedFileName(result: ExportResult): string {
   return `${base}.${extFor(result)}`;
 }
 
-/** Bytes to write: PNG -> ArrayBuffer from blob; SVG -> string. */
-async function payload(result: ExportResult): Promise<ArrayBuffer | string> {
+/** Bytes to write: PNG -> Uint8Array from the blob; SVG -> the markup string. */
+async function payload(result: ExportResult): Promise<Uint8Array | string> {
   if (result.format === "png") {
     if (!result.blob) throw new Error("PNG export missing blob");
-    return await result.blob.arrayBuffer();
+    return new Uint8Array(await result.blob.arrayBuffer());
   }
   if (typeof result.text !== "string") {
     throw new Error("SVG export missing text");
@@ -31,73 +36,63 @@ async function payload(result: ExportResult): Promise<ArrayBuffer | string> {
   return result.text;
 }
 
-/** Resolve a FilePicker constructor across the APIs Zotero exposes. */
-function getFilePicker(win: _ZoteroTypes.MainWindow): any | null {
-  // Preferred: Zotero's wrapped FilePicker helper.
-  try {
-    const ZFP = (Zotero as any).FilePicker;
-    if (ZFP) return new ZFP();
-  } catch {
-    /* fall through */
-  }
-  // Fallback: raw XPCOM nsIFilePicker.
-  try {
-    const C = (win as any).Components || (globalThis as any).Components;
-    if (C?.classes && C?.interfaces) {
-      const fp = C.classes["@mozilla.org/filepicker;1"].createInstance(
-        C.interfaces.nsIFilePicker,
-      );
-      return fp;
-    }
-  } catch {
-    /* fall through */
-  }
-  return null;
-}
-
+/**
+ * Show the native save dialog via Zotero's FilePicker module.
+ * Returns the chosen path, `null` if the user cancelled, or `undefined` if the
+ * picker module could not be loaded (so the caller can fall back).
+ */
 async function pickPath(
   win: _ZoteroTypes.MainWindow,
   result: ExportResult,
-): Promise<string | null> {
-  const fp = getFilePicker(win);
-  if (!fp) return null;
-
-  const ext = extFor(result);
-  const title = result.format === "png" ? "Export PNG" : "Export SVG";
+): Promise<string | null | undefined> {
+  const CU: any =
+    (globalThis as any).ChromeUtils ?? (win as any).ChromeUtils ?? null;
+  let FilePicker: any;
   try {
-    const C = (win as any).Components || (globalThis as any).Components;
-    const modeSave = C?.interfaces?.nsIFilePicker?.modeSave ?? 1;
-    const returnCancel = C?.interfaces?.nsIFilePicker?.returnCancel ?? 1;
+    ({ FilePicker } = CU.importESModule(
+      "chrome://zotero/content/modules/filePicker.mjs",
+    ));
+  } catch (e) {
+    ztoolkit.log("[Bibliometero Insights] FilePicker module unavailable", e);
+    return undefined;
+  }
 
-    // Zotero's FilePicker.init takes (window, title, mode); raw nsIFilePicker
-    // uses a docShell-bound window. Both accept the same shape here.
-    fp.init(win, title, modeSave);
-    fp.appendFilter(
-      `${ext.toUpperCase()} image`,
-      `*.${ext}`,
-    );
+  try {
+    const fp = new FilePicker();
+    const ext = extFor(result);
+    const title =
+      result.format === "png" ? "Export chart as PNG" : "Export chart as SVG";
+    fp.init(win, title, fp.modeSave);
+    fp.appendFilter(`${ext.toUpperCase()} file`, `*.${ext}`);
+    fp.appendFilters(fp.filterAll);
     fp.defaultString = suggestedFileName(result);
     fp.defaultExtension = ext;
-
-    // Zotero.FilePicker.show() returns a Promise; nsIFilePicker.show() is sync.
     const rv = await fp.show();
-    if (rv === returnCancel) return null;
-    // Zotero.FilePicker exposes `.file` (path string); nsIFilePicker `.file.path`.
-    const file = fp.file;
-    if (!file) return null;
-    return typeof file === "string" ? file : file.path;
+    if (rv === fp.returnCancel) return null;
+    return (fp.file as string) || null;
   } catch (e) {
     ztoolkit.log("[Bibliometero Insights] file picker failed", e);
-    return null;
+    return undefined;
   }
 }
 
-/** Write `result` to disk via a picker, or fall back to the data directory. */
+/** Brief success toast so the export is not silent. */
+function notifySaved(path: string): void {
+  try {
+    new ztoolkit.ProgressWindow("Bibliometero", { closeTime: 4000 })
+      .createLine({ text: `Saved ${path}`, type: "success" })
+      .show();
+  } catch {
+    /* toast is best-effort */
+  }
+}
+
+/** Write `result` to disk via the native save dialog. */
 export async function saveExport(
   win: _ZoteroTypes.MainWindow,
   result: ExportResult,
 ): Promise<void> {
-  let data: ArrayBuffer | string;
+  let data: Uint8Array | string;
   try {
     data = await payload(result);
   } catch (e) {
@@ -105,29 +100,26 @@ export async function saveExport(
     return;
   }
 
-  try {
-    let path = await pickPath(win, result);
-    if (!path) {
-      // Fallback: write into the Zotero data dir so the export is never lost.
-      const dir = Zotero.DataDirectory?.dir || (Zotero as any).getZoteroDirectory?.()?.path;
-      if (!dir) {
-        ztoolkit.log("[Bibliometero Insights] no writable directory for export");
-        return;
-      }
-      const sep = dir.endsWith("/") || dir.endsWith("\\") ? "" : "/";
-      path = `${dir}${sep}${suggestedFileName(result)}`;
-      ztoolkit.log(
-        "[Bibliometero Insights] picker unavailable, writing to data dir:",
-        path,
-      );
-    }
+  let path = await pickPath(win, result);
+  if (path === null) return; // user cancelled: write nothing
 
-    // putContentsAsync accepts a string or a typed-array/ArrayBuffer.
-    const toWrite =
-      typeof data === "string" ? data : new Uint8Array(data);
-    await Zotero.File.putContentsAsync(path, toWrite as any);
+  if (path === undefined) {
+    // Picker genuinely unavailable: write into the data dir so the export is
+    // not lost, and tell the user where it went.
+    const dir = (Zotero as any).DataDirectory?.dir;
+    if (!dir) {
+      ztoolkit.log("[Bibliometero Insights] no writable directory for export");
+      return;
+    }
+    const sep = dir.endsWith("/") || dir.endsWith("\\") ? "" : "/";
+    path = `${dir}${sep}${suggestedFileName(result)}`;
+  }
+
+  try {
+    await Zotero.File.putContentsAsync(path, data as any);
     ztoolkit.log("[Bibliometero Insights] export written:", path);
+    notifySaved(path);
   } catch (e) {
-    ztoolkit.log("[Bibliometero Insights] saveExport failed", e);
+    ztoolkit.log("[Bibliometero Insights] saveExport write failed", e);
   }
 }

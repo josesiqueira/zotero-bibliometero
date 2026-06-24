@@ -1,0 +1,49 @@
+<linkset>
+  <html:link rel="localization" href="__addonRef__-preferences.ftl" />
+</linkset>
+<vbox
+  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
+>
+  <label><html:h1 data-l10n-id="pref-title"></html:h1></label>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-graph"></html:h2></label>
+    <checkbox preference="graphView.enable" data-l10n-id="pref-graphView-enable" />
+    <hbox align="center" style="margin-inline-start: 1.5em;">
+      <html:label data-l10n-id="pref-graphView-mode"></html:label>
+      <menulist preference="graphView.mode">
+        <menupopup>
+          <menuitem value="default" label="default" />
+          <menuitem value="related" label="related" />
+          <menuitem value="author" label="author" />
+          <menuitem value="tag" label="tag" />
+        </menupopup>
+      </menulist>
+      <html:label data-l10n-id="pref-graphView-theme"></html:label>
+      <menulist preference="graphView.theme">
+        <menupopup>
+          <menuitem value="auto" label="auto" />
+          <menuitem value="light" label="light" />
+          <menuitem value="dark" label="dark" />
+        </menupopup>
+      </menulist>
+    </hbox>
+    <hbox align="center" style="margin-inline-start: 1.5em;">
+      <html:label data-l10n-id="pref-graphView-scope"></html:label>
+      <menulist preference="graphView.scope">
+        <menupopup>
+          <menuitem value="view" label="current view" />
+          <menuitem value="selection" label="selection + neighbours" />
+          <menuitem value="library" label="whole library" />
+        </menupopup>
+      </menulist>
+    </hbox>
+  </groupbox>
+
+  <vbox>
+    <html:label
+      data-l10n-id="pref-help"
+      data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
+    ></html:label>
+  </vbox>
+</vbox>

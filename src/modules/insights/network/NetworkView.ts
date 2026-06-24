@@ -78,6 +78,20 @@ export class NetworkView implements VizModule {
     this.label = label;
     this.model = model;
     this.sim = new ForceSim();
+    this.tuneForces();
+  }
+
+  /**
+   * Scale repulsion / link distance to the graph size. The default charge is far
+   * too weak once a graph has hundreds of nodes and thousands of edges, so the
+   * springs collapse everything into a central hairball. Stronger repulsion (and
+   * slightly weaker gravity) lets dense graphs spread out and fill the viewport.
+   */
+  private tuneForces(): void {
+    const n = this.model.nodes.length;
+    const charge = -Math.max(240, Math.round(0.9 * n));
+    const linkDistance = n > 250 ? 64 : n > 80 ? 52 : 44;
+    this.sim.setParams({ charge, linkDistance, gravity: 0.04 });
   }
 
   /** Replace the model in place (onDataChange) and re-run layout. */
@@ -86,6 +100,7 @@ export class NetworkView implements VizModule {
     this.highlight.clear();
     this.hover = null;
     this.didFirstFit = false;
+    this.tuneForces();
     this.sim.setGraph(model);
     this.startLoop();
   }
@@ -260,6 +275,7 @@ export class NetworkView implements VizModule {
         return out;
       },
       isSettled: () => this.sim.settled,
+      getView: () => ({ scale: this.view.scale, tx: this.view.tx, ty: this.view.ty }),
       dispatchPointer: (type: "down" | "move" | "up" | "cancel", x: number, y: number) => {
         if (this.interaction) this.interaction.dispatch(type, x, y);
       },

@@ -51,6 +51,10 @@ const ALPHA_TARGET = 0;
 const VELOCITY_DECAY = 0.82; // damping per tick
 /** Max per-node speed (px/tick) under which the layout is considered at rest. */
 const SPEED_MIN = 0.05;
+/** Hard cap on per-axis displacement per tick. Keeps the explicit integrator
+ *  stable under strong repulsion (without it a close pair of heavy aggregate
+ *  cells can blow the layout up to astronomical coordinates). */
+const MAX_VEL = 40;
 
 /**
  * Deterministic small offset derived from a node id. Replaces Math.random()
@@ -225,6 +229,8 @@ export class ForceSim {
         node.vx = 0;
       } else {
         node.vx *= VELOCITY_DECAY;
+        if (node.vx > MAX_VEL) node.vx = MAX_VEL;
+        else if (node.vx < -MAX_VEL) node.vx = -MAX_VEL;
         node.x += node.vx;
       }
       if (node.fy !== null) {
@@ -232,6 +238,8 @@ export class ForceSim {
         node.vy = 0;
       } else {
         node.vy *= VELOCITY_DECAY;
+        if (node.vy > MAX_VEL) node.vy = MAX_VEL;
+        else if (node.vy < -MAX_VEL) node.vy = -MAX_VEL;
         node.y += node.vy;
       }
       const s2 = node.vx * node.vx + node.vy * node.vy;
@@ -281,7 +289,7 @@ export class ForceSim {
       }
       // Heavier edges pull toward a shorter rest length.
       const rest = base / Math.sqrt(Math.max(1, e.weight));
-      const k = 0.4 * alpha;
+      const k = 0.22 * alpha;
       const f = ((dist - rest) / dist) * k;
       const ox = dx * f;
       const oy = dy * f;
@@ -412,7 +420,7 @@ export class ForceSim {
       }
       // Soften at very short range to keep forces bounded.
       const dist = Math.sqrt(dist2);
-      const minDist = 1;
+      const minDist = 6;
       const eff = Math.max(dist, minDist);
       // Repulsion magnitude ~ strength * mass / dist^2 (strength is negative).
       const force = (strength * cell.mass) / (eff * eff);

@@ -106,6 +106,13 @@ export const InsightsHub = (() => {
 
   function register(): void {
     registerViews(); // idempotent
+    // Surface the read-only test hooks now that the addon instance exists (doing
+    // this at module-eval time fails because `addon` is not assigned yet).
+    try {
+      (addon.data as any).test = test;
+    } catch {
+      /* ignore */
+    }
     if (notifierID) return;
 
     const callback = {

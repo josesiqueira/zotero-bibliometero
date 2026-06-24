@@ -78,28 +78,53 @@ function makePrefs(activeId: string): VizPrefs {
   };
 }
 
-/** Open an item: switch to the library tab, select, and open its view. */
-function openItemIn(win: _ZoteroTypes.MainWindow, itemId: number): void {
+/**
+ * Reveal an item in the library tab and select it. The graph is usually built
+ * from the whole library, so the item is often NOT in the collection currently
+ * shown; selectItem() then silently fails. We first switch the collection tree to
+ * the item's library root (My Library / the group) so the item is in view, then
+ * select it. Returns the resolved item (or null).
+ */
+async function revealItem(
+  win: _ZoteroTypes.MainWindow,
+  itemId: number,
+): Promise<Zotero.Item | null> {
+  const w = win as any;
+  const item = Zotero.Items.get(itemId) as Zotero.Item | false;
+  if (!item) return null;
+  w.Zotero_Tabs?.select?.("zotero-pane");
+  const zp = w.ZoteroPane;
+  // Try to select in the current view first; if that misses, fall back to the
+  // item's library root and retry (covers the whole-library-scope case).
   try {
-    const w = win as any;
-    w.Zotero_Tabs?.select?.("zotero-pane");
-    w.ZoteroPane?.selectItem?.(itemId);
-    const item = Zotero.Items.get(itemId) as Zotero.Item | false;
-    if (item) w.ZoteroPane?.viewItems?.([item]);
-  } catch (e) {
-    ztoolkit.log("[Bibliometero Insights] openItem failed", e);
+    const ok = await zp?.selectItem?.(itemId);
+    if (ok) return item;
+  } catch {
+    /* fall through to library-root retry */
   }
+  try {
+    await zp?.collectionsView?.selectLibrary?.(item.libraryID);
+    await zp?.selectItem?.(itemId);
+  } catch (e) {
+    ztoolkit.log("[Bibliometero Insights] revealItem retry failed", e);
+  }
+  return item;
 }
 
-/** Select an item in the tree without opening it. */
+/** Open an item: reveal+select in the library tab, then open its reader view. */
+function openItemIn(win: _ZoteroTypes.MainWindow, itemId: number): void {
+  revealItem(win, itemId)
+    .then((item) => {
+      if (item) (win as any).ZoteroPane?.viewItems?.([item]);
+    })
+    .catch((e) => ztoolkit.log("[Bibliometero Insights] openItem failed", e));
+}
+
+/** Select an item in the tree without opening its reader. */
 function selectItemIn(win: _ZoteroTypes.MainWindow, itemId: number): void {
-  try {
-    const w = win as any;
-    w.Zotero_Tabs?.select?.("zotero-pane");
-    w.ZoteroPane?.selectItem?.(itemId);
-  } catch (e) {
-    ztoolkit.log("[Bibliometero Insights] selectItem failed", e);
-  }
+  revealItem(win, itemId).catch((e) =>
+    ztoolkit.log("[Bibliometero Insights] selectItem failed", e),
+  );
 }
 
 export function buildContext(deps: ContextDeps): VizContext {

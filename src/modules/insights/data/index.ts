@@ -62,6 +62,7 @@ export {
   buildTopAuthors,
   buildComposition,
 } from "./aggregate";
+import { paneLibraryID } from "./extract";
 
 /** A fully-built, reusable bundle for one source:library cache slot. */
 interface ScopeBundle {
@@ -192,7 +193,7 @@ export function createDataAccessors(
       const win = opts.getWin?.();
       const pane = win?.ZoteroPane;
       return (
-        pane?.getSelectedLibraryID?.() ??
+        paneLibraryID(pane) ??
         Zotero.Libraries.userLibraryID ??
         0
       );

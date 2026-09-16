@@ -21,6 +21,7 @@ import { linearScale, bandScale, niceMax, niceTicks } from "./chartkit/scale";
 import { renderValueAxis, renderBandAxis, type PlotArea } from "./chartkit/axis";
 import { createTooltip, type Tooltip } from "./chartkit/tooltip";
 import { serializeSVG, svgToPng } from "./chartkit/exporter";
+import { parseYear } from "../data/extract";
 
 const UNKNOWN_KEY = "__unknown";
 
@@ -91,14 +92,23 @@ export class PubYearsChart implements VizModule {
     // Order: ascending years, the null bucket rendered last as "Unknown".
     const dated = d.buckets.filter((b) => b.year !== null);
     const nullBucket = d.buckets.find((b) => b.year === null);
-    const keyed: { key: string; label: string; count: number }[] = dated.map(
-      (b) => ({ key: String(b.year), label: String(b.year), count: b.count }),
-    );
+    const keyed: {
+      key: string;
+      label: string;
+      count: number;
+      year: number | null;
+    }[] = dated.map((b) => ({
+      key: String(b.year),
+      label: String(b.year),
+      count: b.count,
+      year: b.year,
+    }));
     if (nullBucket && nullBucket.count > 0) {
       keyed.push({
         key: UNKNOWN_KEY,
         label: "Unknown",
         count: nullBucket.count,
+        year: null,
       });
     }
     if (keyed.length === 0) {
@@ -182,12 +192,11 @@ export class PubYearsChart implements VizModule {
           xy.y,
         );
       };
-      // Click a dated bar -> find that year's items in the library.
-      if (!isUnknown) {
+      // Click a dated bar -> filter the library to exactly that year's items.
+      if (!isUnknown && b.year !== null) {
+        const yr = b.year;
         (rect as unknown as SVGElement).style.cursor = "pointer";
-        rect.addEventListener("click", () => {
-          this.ctx?.searchLibrary?.(b.key);
-        });
+        rect.addEventListener("click", () => void this.onBarClick(yr));
       }
       rect.addEventListener("pointerenter", onShow);
       rect.addEventListener("pointermove", onShow);
@@ -201,6 +210,32 @@ export class PubYearsChart implements VizModule {
     });
     this.svg.appendChild(barsG);
     this.updateStatus();
+  }
+
+  /**
+   * Drill-down when a year bar is clicked. Filter the library to exactly the
+   * items the chart counted for this year by re-parsing each live item's year
+   * with the SAME parseYear() the aggregation uses, then revealing them. Unlike
+   * a fuzzy quick-search on the year string (which also matches the digits in
+   * titles, access dates, DOIs, etc.), this stays in lock-step with the bar.
+   */
+  private async onBarClick(year: number): Promise<void> {
+    if (!this.ctx || !Number.isFinite(year)) return;
+    try {
+      const items = await this.ctx.data.items();
+      const ids = items
+        .filter((it) => {
+          try {
+            return parseYear(it) === year;
+          } catch {
+            return false;
+          }
+        })
+        .map((it) => it.id);
+      if (ids.length) this.ctx.revealItems?.(ids);
+    } catch (e) {
+      this.ctx.log?.("[pubs-per-year] drill-down failed", e);
+    }
   }
 
   private renderEmpty(theme: ThemeInfo, msg: string): void {

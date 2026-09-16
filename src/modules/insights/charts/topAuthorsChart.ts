@@ -19,6 +19,7 @@ import { svgText, createPlot, clearSvg } from "./chartkit/svg";
 import { renderRankedBars, type RankedEntry } from "./chartkit/rankedBars";
 import { createTooltip, type Tooltip } from "./chartkit/tooltip";
 import { serializeSVG, svgToPng } from "./chartkit/exporter";
+import { toRecord, normalizeCreators } from "../data";
 
 export function createTopAuthorsChart(): VizModule {
   return new TopAuthorsChart();
@@ -129,7 +130,6 @@ export class TopAuthorsChart implements VizModule {
       return;
     }
 
-    const focus = this.ctx.focusAuthor;
     const entries: RankedEntry[] = d.entries.map((e) => ({
       label: e.label,
       value: e.count,
@@ -143,11 +143,38 @@ export class TopAuthorsChart implements VizModule {
       maxLabelChars: 26,
       tooltip: this.tooltip,
       toHostXY: (cx, cy) => this.hostXY(cx, cy),
-      onBarClick: focus
-        ? (entry) => focus(entry.key, entry.label)
-        : undefined,
+      onBarClick: (entry) => void this.onBarClick(entry.key),
     });
     this.updateStatus();
+  }
+
+  /**
+   * Drill-down when an author bar is clicked. Select exactly the items the chart
+   * counted for this author by re-deriving each live item's normalized author
+   * keys with the SAME normalizeCreators() the aggregation uses, then filtering
+   * the library to those items. This keeps the shown list in lock-step with the
+   * bar's count, unlike a fuzzy quick-search on the display label ("Last, F.")
+   * which matches inconsistently (often nothing).
+   */
+  private async onBarClick(authorKey: string): Promise<void> {
+    if (!this.ctx || !authorKey) return;
+    try {
+      const items = await this.ctx.data.items();
+      const ids = items
+        .filter((it) => {
+          try {
+            return normalizeCreators(toRecord(it)).some(
+              (k) => k.key === authorKey,
+            );
+          } catch {
+            return false;
+          }
+        })
+        .map((it) => it.id);
+      if (ids.length) this.ctx.revealItems?.(ids);
+    } catch (e) {
+      this.ctx.log?.("[top-authors] drill-down failed", e);
+    }
   }
 
   private renderEmpty(theme: ThemeInfo, msg: string): void {

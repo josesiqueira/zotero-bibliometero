@@ -19,6 +19,7 @@ import { svgText, createPlot, clearSvg } from "./chartkit/svg";
 import { renderRankedBars, type RankedEntry } from "./chartkit/rankedBars";
 import { createTooltip, type Tooltip } from "./chartkit/tooltip";
 import { serializeSVG, svgToPng } from "./chartkit/exporter";
+import { extractSource } from "../data/extract";
 
 export function createTopSourcesChart(): VizModule {
   return new TopSourcesChart();
@@ -145,7 +146,7 @@ export class TopSourcesChart implements VizModule {
       maxLabelChars: 28,
       tooltip: this.tooltip,
       toHostXY: (cx, cy) => this.hostXY(cx, cy),
-      onBarClick: (e) => this.ctx?.searchLibrary?.(e.label),
+      onBarClick: (e) => void this.onBarClick(e.label),
     });
 
     if (hasFooter) {
@@ -165,6 +166,34 @@ export class TopSourcesChart implements VizModule {
       );
     }
     this.updateStatus();
+  }
+
+  /**
+   * Drill-down when a source bar is clicked. Select exactly the items the chart
+   * counted for this source by re-matching live items with the SAME
+   * extractSource() the aggregation uses, then revealing them. This keeps the
+   * selection in lock-step with the bar's count, unlike a fuzzy quick-search on
+   * the source name (which also matches the term in titles, other fields, etc.).
+   */
+  private async onBarClick(name: string): Promise<void> {
+    if (!this.ctx) return;
+    const target = (name || "").trim();
+    if (!target) return;
+    try {
+      const items = await this.ctx.data.items();
+      const ids = items
+        .filter((it) => {
+          try {
+            return extractSource(it).trim() === target;
+          } catch {
+            return false;
+          }
+        })
+        .map((it) => it.id);
+      if (ids.length) this.ctx.revealItems?.(ids);
+    } catch (e) {
+      this.ctx.log?.("[top-sources] drill-down failed", e);
+    }
   }
 
   private renderEmpty(theme: ThemeInfo, msg: string): void {

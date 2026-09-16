@@ -35,6 +35,7 @@ import { DockHost } from "./hosts/dock";
 import { TabHost } from "./hosts/tab";
 import type { HostController } from "./hosts/types";
 import { insightsSet } from "./set/store";
+import { paneLibraryID } from "./data/extract";
 
 const BUTTON_ID = "bibliometero-insights-button";
 const CSS_LINK_ID = "bibliometero-insights-css";
@@ -45,7 +46,7 @@ const VIEW_DESCRIPTIONS: Record<string, string> = {
   coauthorship:
     "Co-authorship network: each dot is an author, a line links authors who share a paper. Bigger dots wrote more.",
   "author-paper":
-    "Your papers and their authors, linked by who wrote what. Best on a Curated set; the whole library is capped to the most co-authored papers.",
+    "Your papers and their authors, linked by who wrote what. The whole library is capped to the most co-authored papers; exclude items to narrow it.",
   "pubs-per-year":
     "How many items you have per publication year. Click a bar to find that year's items in your library.",
   "top-sources":
@@ -53,18 +54,21 @@ const VIEW_DESCRIPTIONS: Record<string, string> = {
   "top-authors":
     "Authors ranked by how many of your items they wrote. Click one to find their items in your library.",
   composition: "A breakdown of your items by type and by collection.",
-  set: "Manage the curated set, the specific papers Insights focuses on. Add papers by right-clicking them in the library.",
+  set: "Choose what Insights analyses: your whole library minus excluded items, or only items you include. Right-click papers in the library to curate.",
 };
 
 /**
- * Chart icon: the bar-chart emoji rendered as the toolbar button image. Using a
- * colour emoji (instead of a context-stroke SVG) means it shows up without any
- * -moz-context-properties theming, which the button does not set.
+ * Toolbar button icon: a white "B" on an orange rounded square (the Bibliometero
+ * mark). Drawn with concrete fills (not context-stroke) so it shows in full
+ * colour without any -moz-context-properties theming, which the button does not
+ * set.
  */
 const HISTOGRAM_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' +
-  '<text x="12" y="20" font-size="20" text-anchor="middle" ' +
-  'dominant-baseline="alphabetic">\u{1F4CA}</text></svg>';
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+  '<rect x="0" y="0" width="32" height="32" rx="7" ry="7" fill="#F28C28"/>' +
+  '<text x="16" y="17" font-family="Helvetica, Arial, sans-serif" ' +
+  'font-size="23" font-weight="700" fill="#ffffff" text-anchor="middle" ' +
+  'dominant-baseline="central">B</text></svg>';
 
 function svgDataUri(svg: string): string {
   return `url('data:image/svg+xml,${encodeURIComponent(svg)}')`;
@@ -101,6 +105,39 @@ export const InsightsHub = (() => {
 
   const dockHost = new DockHost();
   const tabHost = new TabHost();
+
+  /**
+   * Cached count of regular items per library, used for the "My Library (N)"
+   * label (N = total regular minus excluded). Filled lazily and invalidated on
+   * item add/delete/trash so the label stays current without re-counting on
+   * every theme flip or set change.
+   */
+  const totalRegularCache = new Map<number, number>();
+
+  async function computeTotalRegular(libraryID: number): Promise<number> {
+    let n = 0;
+    try {
+      const all = await Zotero.Items.getAll(libraryID, true);
+      for (const it of (all as any[]) || []) {
+        try {
+          if (
+            it &&
+            typeof it.isRegularItem === "function" &&
+            it.isRegularItem() &&
+            !(typeof it.isFeedItem === "function" && it.isFeedItem())
+          ) {
+            n++;
+          }
+        } catch {
+          /* skip a malformed item */
+        }
+      }
+    } catch {
+      n = 0;
+    }
+    totalRegularCache.set(libraryID, n);
+    return n;
+  }
 
   // ---- prefs helpers -------------------------------------------------
 
@@ -508,10 +545,10 @@ export const InsightsHub = (() => {
       doc,
       "button",
       "bm-seg-btn",
-      "Whole library",
+      "My Library",
     ) as HTMLButtonElement;
     srcLib.addEventListener("click", () => onSourceChange(st, "library"));
-    const srcSet = el(doc, "button", "bm-seg-btn") as HTMLButtonElement;
+    const srcSet = el(doc, "button", "bm-seg-btn", "Manage") as HTMLButtonElement;
     srcSet.addEventListener("click", () => onSourceChange(st, "set"));
     sourceWrap.appendChild(srcLib);
     sourceWrap.appendChild(srcSet);
@@ -580,37 +617,89 @@ export const InsightsHub = (() => {
     setSource(next);
     updateSourceUI(st);
     if (next === "set") {
-      // Clicking "Curated set" always takes you to the Set tab so the click has
-      // a clear, visible effect (you see exactly what is in the set). Done even
-      // when the source was already "set".
+      // Clicking "Manage" always opens the management view so the click has a
+      // clear, visible effect (you see exactly what is excluded). Done even when
+      // the source was already "set".
       void activate(st, "set");
       return;
     }
-    // Back to "Whole library": if sitting on the Set management view, return to a
+    // Back to "My Library": if sitting on the management view, return to a
     // visualization; otherwise re-render the current view against the library.
     const target = st.activeId === "set" ? defaultView() : st.activeId || lastView();
     void activate(st, target);
   }
 
-  function curatedCount(st: WinState): number {
+  function currentLibraryID(st: WinState): number {
     try {
-      const libraryID =
-        (st.win as any).ZoteroPane?.getSelectedLibraryID?.() ??
+      return (
+        paneLibraryID((st.win as any).ZoteroPane) ??
         Zotero.Libraries.userLibraryID ??
-        0;
-      return insightsSet.count(libraryID);
+        0
+      );
     } catch {
       return 0;
     }
   }
 
+  /** Size of the active scope list (excluded count, or included count). */
+  function activeScopeCount(st: WinState): number {
+    try {
+      return insightsSet.count(currentLibraryID(st));
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Label the source toggle, mode-aware. In exclude mode the primary button
+   * reads "My Library (N)" (N = total regular minus excluded); in include mode
+   * it reads "Insights set (K)" (K = included count). The secondary button opens
+   * the management view.
+   */
   function updateSourceUI(st: WinState): void {
     const cur = source();
+    const libraryID = currentLibraryID(st);
+    const mode = (() => {
+      try {
+        return insightsSet.getMode(libraryID);
+      } catch {
+        return "exclude" as const;
+      }
+    })();
+    const activeCount = activeScopeCount(st);
+
     if (st.sourceLibraryBtn) {
+      st.sourceLibraryBtn.setAttribute(
+        "title",
+        mode === "include"
+          ? "Analyse only your Insights set"
+          : "Analyse your whole library (minus excluded items)",
+      );
+      if (mode === "include") {
+        st.sourceLibraryBtn.textContent = `Insights set (${activeCount})`;
+      } else {
+        const total = totalRegularCache.get(libraryID);
+        if (total != null) {
+          const analyzed = Math.max(0, total - activeCount);
+          st.sourceLibraryBtn.textContent = `My Library (${analyzed})`;
+        } else {
+          st.sourceLibraryBtn.textContent = "My Library";
+          // Fill the count asynchronously, then relabel.
+          void computeTotalRegular(libraryID).then(() => {
+            if (!st.destroyed) updateSourceUI(st);
+          });
+        }
+      }
       st.sourceLibraryBtn.classList.toggle("bm-active", cur === "library");
     }
     if (st.sourceSetBtn) {
-      st.sourceSetBtn.textContent = `Curated set (${curatedCount(st)})`;
+      st.sourceSetBtn.textContent = "Manage";
+      st.sourceSetBtn.setAttribute(
+        "title",
+        mode === "include"
+          ? "Manage your Insights set"
+          : "Manage excluded items",
+      );
       st.sourceSetBtn.classList.toggle("bm-active", cur === "set");
     }
   }
@@ -727,17 +816,16 @@ export const InsightsHub = (() => {
       }
     });
 
-    // Live set count + refresh when the curated set changes while source=set.
+    // Refresh the label and the active view whenever the exclusion set changes:
+    // excluding/including items changes the analysed scope for every view.
     try {
       st.setUnsub = insightsSet.subscribe(() => {
         if (st.destroyed) return;
         updateSourceUI(st);
-        if (source() === "set") {
-          try {
-            st.current?.onDataChange?.();
-          } catch (e) {
-            ztoolkit.log("[Bibliometero Insights] set onDataChange failed", e);
-          }
+        try {
+          st.current?.onDataChange?.();
+        } catch (e) {
+          ztoolkit.log("[Bibliometero Insights] exclusion onDataChange failed", e);
         }
       });
     } catch {
@@ -785,6 +873,17 @@ export const InsightsHub = (() => {
 
   function onNotify(event: string, type: string): void {
     if (!addon?.data?.alive) return;
+    // The library item count changed: drop the cached totals so the
+    // "My Library (N)" label recomputes on the next updateSourceUI.
+    if (
+      type === "item" &&
+      (event === "add" ||
+        event === "delete" ||
+        event === "trash" ||
+        event === "refresh")
+    ) {
+      totalRegularCache.clear();
+    }
     if (type === "tab" && event === "select") {
       for (const st of states.values()) {
         if (st.host && !st.destroyed) {
@@ -902,6 +1001,11 @@ export const InsightsHub = (() => {
     /* ignore */
   }
 
+  /** Whether the Insights shell is currently open (dock or tab) in this window. */
+  function isOpen(win: _ZoteroTypes.MainWindow): boolean {
+    return !!states.get(win)?.host;
+  }
+
   return {
     register,
     registerWindow,
@@ -910,6 +1014,7 @@ export const InsightsHub = (() => {
     /** Toolbar action: toggle the bottom dock. (Name kept for hooks/tests.) */
     openTab: toggleDock,
     toggleDock,
+    isOpen,
     test,
   };
 })();

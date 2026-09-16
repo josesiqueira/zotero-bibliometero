@@ -1,32 +1,59 @@
 /**
- * insights/set/store.ts — the curated-set STORE (pref-backed singleton).
+ * insights/set/store.ts — the dual-mode SCOPE STORE (pref-backed singleton).
  *
- * Implements `InsightsSetStore` (the FROZEN CONTRACT in ./types.ts). The
- * "Insights set" is a plugin-private, per-library list of item ids. Nothing is
- * written to the user's items (no tags); the only persistence is the plugin
- * pref `insights.set`, a JSON string of `{ [libraryID: number]: number[] }`.
+ * Implements `InsightsSetStore` (the FROZEN CONTRACT in ./types.ts). Each
+ * library has a SCOPE made of a `mode` plus TWO id-lists that always coexist:
+ *
+ *   - mode "exclude": analyse the whole library MINUS the `exclude` list
+ *     (a blocklist; an empty list means the whole library).
+ *   - mode "include": analyse ONLY the `include` list (an allowlist; an empty
+ *     list means nothing is analysed yet).
+ *
+ * Both lists persist regardless of the active mode, so flipping modes never
+ * loses the user's curation (it is a single field write). Nothing is written to
+ * the user's items (no tags); the only persistence is the plugin pref
+ * `insights.excluded`, a JSON string (see persistence section for the shape).
+ *
+ * ACTIVE-LIST SEMANTICS (important): the historical methods has / count / list /
+ * add / remove / toggle / clear all act on the ACTIVE list for the library, i.e.
+ * the `exclude` list in exclude mode and the `include` list in include mode. So
+ * `add` excludes in exclude mode and includes in include mode; `has` means "is
+ * in the active list". This is what lets the context menus, the management view,
+ * and the data layer keep their existing calls and have semantics follow the
+ * mode. Use getMode/setMode to read/flip the mode.
  *
  * Design:
- *  - In-memory cache: `Map<number, Set<number>>` loaded lazily from the pref.
+ *  - In-memory cache: `Map<number, LibScope>` loaded lazily from the pref.
  *  - Writes are debounced (~250ms) but a synchronous flush guarantees a reopen
  *    sees the latest state.
- *  - One Zotero.Notifier observer (on ["item"]) prunes deleted/trashed items so
- *    they leave the set automatically. Registration is idempotent.
+ *  - One Zotero.Notifier observer (on ["item"]) prunes PERMANENTLY-deleted items
+ *    from BOTH lists so they cannot resurrect in the inactive list on a later
+ *    mode switch. Trashed-but-not-deleted items still resolve via
+ *    Zotero.Items.get, so they intentionally stay curated (restore keeps them).
  *
  * Dependency-free, defensive: every Zotero / JSON / pref touch is guarded.
  */
 
-import type { InsightsSetStore } from "./types";
+import type { InsightsSetStore, InsightsScopeMode } from "./types";
 import { getPrefRaw, setPrefRaw } from "../../../utils/prefs";
+import {
+  type LibScope,
+  parsePref,
+  serialize,
+  needsMigration,
+  defaultScope,
+  pruneScope,
+  isValidId,
+} from "./scope";
 
-const PREF_KEY = "insights.set";
+const PREF_KEY = "insights.excluded";
 const WRITE_DEBOUNCE_MS = 250;
 const PRUNE_DEBOUNCE_MS = 250;
 
-/** Lazily-loaded per-library membership. `null` until first load. */
-let cache: Map<number, Set<number>> | null = null;
+/** Lazily-loaded per-library scope. `null` until first load. */
+let cache: Map<number, LibScope> | null = null;
 
-/** Change subscribers. Called (best-effort) on any membership change. */
+/** Change subscribers. Called (best-effort) on any membership / mode change. */
 const subscribers = new Set<() => void>();
 
 /** Debounced-write handle and the notifier-prune handle. */
@@ -37,35 +64,12 @@ let pruneTimer: ReturnType<typeof setTimeout> | null = null;
 let notifierID: string | null = null;
 
 // ---- persistence ----------------------------------------------------------
-
-/** Parse the pref JSON defensively into the cache shape. Corrupt -> empty. */
-function parsePref(raw: unknown): Map<number, Set<number>> {
-  const map = new Map<number, Set<number>>();
-  if (typeof raw !== "string" || raw.length === 0) return map;
-  let obj: unknown;
-  try {
-    obj = JSON.parse(raw);
-  } catch {
-    return map;
-  }
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return map;
-  for (const key of Object.keys(obj as Record<string, unknown>)) {
-    const libraryID = Number(key);
-    if (!Number.isFinite(libraryID)) continue;
-    const value = (obj as Record<string, unknown>)[key];
-    if (!Array.isArray(value)) continue;
-    const set = new Set<number>();
-    for (const raw2 of value) {
-      const id = Number(raw2);
-      if (Number.isFinite(id)) set.add(id);
-    }
-    map.set(libraryID, set);
-  }
-  return map;
-}
+//
+// Parsing / serialization / migration detection live in ./scope.ts (pure). The
+// store only owns the cache, the side-effecting load, and the write-back.
 
 /** Load the cache from the pref the first time it is needed. */
-function ensureCache(): Map<number, Set<number>> {
+function ensureCache(): Map<number, LibScope> {
   if (cache) return cache;
   // Registering on first use keeps the orchestrator from having to call init().
   init();
@@ -76,22 +80,15 @@ function ensureCache(): Map<number, Set<number>> {
     raw = undefined;
   }
   cache = parsePref(raw);
-  return cache;
-}
-
-/** Serialize the cache to the `{ [libraryID]: number[] }` JSON shape. */
-function serialize(map: Map<number, Set<number>>): string {
-  const obj: Record<string, number[]> = {};
-  for (const [libraryID, set] of map) {
-    // Skip empty libraries so the stored JSON stays compact.
-    if (set.size === 0) continue;
-    obj[String(libraryID)] = Array.from(set);
-  }
+  // Write the v2 shape back once (synchronously) after a legacy lift so later
+  // loads skip detection. Idempotent: re-running on an already-v2 pref is a
+  // no-op write.
   try {
-    return JSON.stringify(obj);
+    if (needsMigration(raw)) flush();
   } catch {
-    return "{}";
+    /* best-effort migration write-back */
   }
+  return cache;
 }
 
 /** Write the cache to the pref now (synchronous). Cancels any pending write. */
@@ -128,21 +125,34 @@ function notify(): void {
   }
 }
 
-/** Persist (debounced) and notify after a membership change. */
+/** Persist (debounced) and notify after a membership / mode change. */
 function changed(): void {
   persist();
   notify();
 }
 
-/** The Set for a library, creating an empty one in the cache if needed. */
-function setFor(libraryID: number): Set<number> {
+/** The scope for a library, creating a default one in the cache if needed. */
+function scopeFor(libraryID: number): LibScope {
   const map = ensureCache();
-  let set = map.get(libraryID);
-  if (!set) {
-    set = new Set<number>();
-    map.set(libraryID, set);
+  let s = map.get(libraryID);
+  if (!s) {
+    s = defaultScope();
+    map.set(libraryID, s);
   }
-  return set;
+  return s;
+}
+
+/** The ACTIVE list for a library without creating cache state (read path). */
+function activeSetRead(libraryID: number): Set<number> | null {
+  const s = ensureCache().get(libraryID);
+  if (!s) return null;
+  return s.mode === "include" ? s.include : s.exclude;
+}
+
+/** The ACTIVE list for a library, creating default state if needed (write path). */
+function activeSetWrite(libraryID: number): Set<number> {
+  const s = scopeFor(libraryID);
+  return s.mode === "include" ? s.include : s.exclude;
 }
 
 // ---- notifier (auto-prune) ------------------------------------------------
@@ -204,27 +214,39 @@ function schedulePrune(): void {
 // ---- the singleton --------------------------------------------------------
 
 export const insightsSet: InsightsSetStore = {
+  getMode(libraryID: number): InsightsScopeMode {
+    return ensureCache().get(libraryID)?.mode ?? "exclude";
+  },
+
+  setMode(libraryID: number, mode: InsightsScopeMode): void {
+    const next: InsightsScopeMode = mode === "include" ? "include" : "exclude";
+    const s = scopeFor(libraryID);
+    if (s.mode === next) return;
+    s.mode = next;
+    changed();
+  },
+
   has(libraryID: number, itemID: number): boolean {
-    const set = ensureCache().get(libraryID);
+    const set = activeSetRead(libraryID);
     return set ? set.has(itemID) : false;
   },
 
   count(libraryID: number): number {
-    const set = ensureCache().get(libraryID);
+    const set = activeSetRead(libraryID);
     return set ? set.size : 0;
   },
 
   list(libraryID: number): number[] {
-    const set = ensureCache().get(libraryID);
+    const set = activeSetRead(libraryID);
     return set ? Array.from(set) : [];
   },
 
   add(libraryID: number, itemIDs: number[]): void {
     if (!itemIDs || itemIDs.length === 0) return;
-    const set = setFor(libraryID);
+    const set = activeSetWrite(libraryID);
     let mutated = false;
     for (const id of itemIDs) {
-      if (!Number.isFinite(id) || set.has(id)) continue;
+      if (!isValidId(id) || set.has(id)) continue;
       set.add(id);
       mutated = true;
     }
@@ -233,7 +255,7 @@ export const insightsSet: InsightsSetStore = {
 
   remove(libraryID: number, itemIDs: number[]): void {
     if (!itemIDs || itemIDs.length === 0) return;
-    const set = ensureCache().get(libraryID);
+    const set = activeSetRead(libraryID);
     if (!set) return;
     let mutated = false;
     for (const id of itemIDs) {
@@ -243,8 +265,8 @@ export const insightsSet: InsightsSetStore = {
   },
 
   toggle(libraryID: number, itemIDs: number[]): "added" | "removed" {
-    const ids = (itemIDs || []).filter((id) => Number.isFinite(id));
-    const set = setFor(libraryID);
+    const ids = (itemIDs || []).filter((id) => isValidId(id));
+    const set = activeSetWrite(libraryID);
     // If ANY id is missing, add all (so a mixed selection adds); else remove all.
     const anyMissing = ids.length === 0 || ids.some((id) => !set.has(id));
     if (anyMissing) {
@@ -267,7 +289,7 @@ export const insightsSet: InsightsSetStore = {
   },
 
   clear(libraryID: number): void {
-    const set = ensureCache().get(libraryID);
+    const set = activeSetRead(libraryID);
     if (!set || set.size === 0) return;
     set.clear();
     changed();
@@ -284,20 +306,16 @@ export const insightsSet: InsightsSetStore = {
     try {
       const map = ensureCache();
       let mutated = false;
-      for (const set of map.values()) {
-        for (const id of Array.from(set)) {
-          let exists = false;
-          try {
-            // Zotero.Items.get returns false when the item is gone.
-            exists = !!Zotero.Items.get(id);
-          } catch {
-            exists = false;
-          }
-          if (!exists) {
-            set.delete(id);
-            mutated = true;
-          }
-        }
+      for (const [libraryID, scope] of map) {
+        // Only prune a library whose items are actually loaded. A delete in ANY
+        // library schedules a prune across ALL of them, and Zotero.Items.get()
+        // returns falsy for items in a transiently-unloaded (e.g. group)
+        // library, so without this guard we would silently and permanently wipe
+        // still-valid curated ids. Skipping leaves those lists untouched.
+        if (!isLibraryItemsLoaded(libraryID)) continue;
+        // Prune BOTH lists, not just the active one, so a deleted item cannot
+        // resurrect in the inactive list after a later mode switch.
+        if (pruneScope(scope, idExists)) mutated = true;
       }
       if (mutated) changed();
     } catch {
@@ -305,3 +323,28 @@ export const insightsSet: InsightsSetStore = {
     }
   },
 };
+
+/** True when a library exists and its items are loaded (safe to prune against). */
+function isLibraryItemsLoaded(libraryID: number): boolean {
+  try {
+    const lib = (Zotero.Libraries as any)?.get?.(libraryID);
+    if (!lib) return false;
+    // getDataLoaded may be absent on some library types; treat present-lib as
+    // loaded in that case rather than risk wiping valid ids.
+    if (typeof lib.getDataLoaded === "function") {
+      return !!lib.getDataLoaded("item");
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Zotero.Items.get(id) truthiness, guarded. */
+function idExists(id: number): boolean {
+  try {
+    return !!Zotero.Items.get(id);
+  } catch {
+    return false;
+  }
+}

@@ -1,19 +1,22 @@
 import { insightsSet } from "./store";
+import { paneLibraryID } from "../data/extract";
 
 /**
- * Right-click context menus for the Insights curated set.
+ * Right-click context menus for Insights EXCLUSIONS.
  *
- * Two injected menu items, both driven by the live selection at popup time:
+ * The analysis scope is "My Library minus excluded items"; these menus exclude
+ * (or restore) items. Two injected menu items, driven by the live selection at
+ * popup time:
  *
  *   1. ITEM menu ("#zotero-itemmenu", id "bibliometero-set-toggle"):
- *      multi-select aware. If EVERY selected regular item is already in the set
- *      the label is "Remove from Insights" and a click removes them; otherwise
- *      the label is "Add to Insights" and a click adds the missing ones. Hidden
- *      when no regular item is selected.
+ *      multi-select aware. If EVERY selected regular item is already excluded
+ *      the label is "Include in Insights" and a click restores them; otherwise
+ *      the label is "Exclude from Insights" and a click excludes the rest.
+ *      Hidden when no regular item is selected.
  *
  *   2. COLLECTION menu ("#zotero-collectionmenu", id "bibliometero-set-collection"):
- *      "Add collection to Insights". A click adds the right-clicked collection's
- *      top-level regular items to the set. Shown only for real collection rows.
+ *      "Exclude collection from Insights". A click excludes the right-clicked
+ *      collection's top-level regular items. Shown only for real collection rows.
  *
  * We patch the built-in popups directly (rather than ztoolkit.Menu.register) so
  * the labels can be recomputed on every popupshowing and so we keep precise,
@@ -28,9 +31,35 @@ const COLLECTION_MENU_ID = "zotero-collectionmenu";
 const ITEM_TOGGLE_ID = "bibliometero-set-toggle";
 const COLLECTION_ADD_ID = "bibliometero-set-collection";
 
-const LABEL_ADD = "Add to Insights";
-const LABEL_REMOVE = "Remove from Insights";
-const LABEL_ADD_COLLECTION = "Add collection to Insights";
+/** Default item label used at creation; recomputed mode-aware on popupshowing. */
+const LABEL_ADD = "Exclude from Insights";
+const LABEL_ADD_COLLECTION = "Exclude collection from Insights";
+
+/** Mode-aware add/remove verbs for the item menu. */
+function itemLabels(mode: "exclude" | "include"): {
+  add: string;
+  remove: string;
+} {
+  return mode === "include"
+    ? { add: "Add to Insights", remove: "Remove from Insights" }
+    : { add: "Exclude from Insights", remove: "Include in Insights" };
+}
+
+/** Mode-aware collection-menu label. */
+function collectionLabel(mode: "exclude" | "include"): string {
+  return mode === "include"
+    ? "Add collection to Insights"
+    : "Exclude collection from Insights";
+}
+
+/** The active scope mode for a library, defaulting to "exclude". */
+function modeFor(libraryID: number): "exclude" | "include" {
+  try {
+    return insightsSet.getMode(libraryID);
+  } catch {
+    return "exclude";
+  }
+}
 
 type AnyWindow = Window & typeof globalThis & { ZoteroPane?: any };
 
@@ -83,7 +112,7 @@ function getSelectedRegularItems(win: AnyWindow): any[] {
 function getSelectionLibraryID(win: AnyWindow, items: any[]): number | null {
   try {
     const pane = win.ZoteroPane;
-    const fromPane = pane?.getSelectedLibraryID?.();
+    const fromPane = paneLibraryID(pane);
     if (typeof fromPane === "number") {
       return fromPane;
     }
@@ -223,7 +252,8 @@ function onItemPopupShowing(win: AnyWindow, item: Element): void {
         return false;
       }
     });
-    item.setAttribute("label", allIn ? LABEL_REMOVE : LABEL_ADD);
+    const labels = itemLabels(modeFor(libraryID));
+    item.setAttribute("label", allIn ? labels.remove : labels.add);
   } catch (e) {
     log("onItemPopupShowing failed", e);
     try {
@@ -262,7 +292,16 @@ function onCollectionPopupShowing(win: AnyWindow, item: Element): void {
       return;
     }
     item.removeAttribute("hidden");
-    item.setAttribute("label", LABEL_ADD_COLLECTION);
+    let libraryID: number | null = null;
+    try {
+      if (typeof coll.libraryID === "number") libraryID = coll.libraryID;
+    } catch {
+      libraryID = null;
+    }
+    item.setAttribute(
+      "label",
+      collectionLabel(libraryID != null ? modeFor(libraryID) : "exclude"),
+    );
   } catch (e) {
     log("onCollectionPopupShowing failed", e);
     try {

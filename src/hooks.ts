@@ -2,7 +2,14 @@ import { initLocale } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { InsightsHub } from "./modules/insights/hub";
+import {
+  cleanupDrilldownSearches,
+  installDrilldownAutoRemove,
+  uninstallDrilldownAutoRemove,
+} from "./modules/insights/context";
 import { ContextMenus } from "./modules/insights/set/contextMenus";
+import { RowHighlight } from "./modules/insights/set/rowHighlight";
+import { ViewMenu } from "./modules/insights/viewMenu";
 import {
   init as initInsightsSet,
   unregister as unregisterInsightsSet,
@@ -37,10 +44,16 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   addon.data.ztoolkit = createZToolkit();
   InsightsHub.registerWindow(win);
   ContextMenus.registerWindow(win);
+  ViewMenu.registerWindow(win);
+  RowHighlight.registerWindow(win);
+  installDrilldownAutoRemove(win);
 }
 
 async function onMainWindowUnload(win: _ZoteroTypes.MainWindow): Promise<void> {
   ContextMenus.unregisterWindow(win);
+  ViewMenu.unregisterWindow(win);
+  RowHighlight.unregisterWindow(win);
+  uninstallDrilldownAutoRemove(win);
   InsightsHub.unregisterWindow(win);
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
@@ -53,9 +66,16 @@ async function onShutdown(): Promise<void> {
     } catch {
       /* ignore */
     }
+    try {
+      ViewMenu.unregisterWindow(win);
+    } catch {
+      /* ignore */
+    }
   }
   InsightsHub.unregister();
+  RowHighlight.unregister();
   unregisterInsightsSet();
+  await cleanupDrilldownSearches();
 
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();

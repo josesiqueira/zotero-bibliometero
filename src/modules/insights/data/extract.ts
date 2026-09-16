@@ -16,6 +16,7 @@
 import type { VizScope } from "../types";
 import type { InsightsSource } from "../set/types";
 import { insightsSet } from "../set/store";
+import { isInScope } from "../set/scope";
 
 /**
  * What `gatherItems` accepts. The dock's primary control is the SOURCE
@@ -264,6 +265,33 @@ function isUsableItem(it: any): boolean {
 }
 
 /**
+ * Library id of the pane's current selection. Zotero 10 removed
+ * ZoteroPane.getSelectedLibraryID() (it now logs an error) in favour of
+ * getSelectedLibraryIDs(); prefer the new accessor and fall back to the old
+ * one on Zotero 7 to 9. Never throws; undefined when nothing is selected.
+ */
+export function paneLibraryID(pane: any): number | undefined {
+  try {
+    if (pane && typeof pane.getSelectedLibraryIDs === "function") {
+      const ids = pane.getSelectedLibraryIDs();
+      const first = Array.isArray(ids)
+        ? ids[0]
+        : ids instanceof Set
+          ? [...ids][0]
+          : undefined;
+      if (typeof first === "number") return first;
+    }
+    if (pane && typeof pane.getSelectedLibraryID === "function") {
+      const id = pane.getSelectedLibraryID();
+      if (typeof id === "number") return id;
+    }
+  } catch {
+    /* fall through */
+  }
+  return undefined;
+}
+
+/**
  * Resolve the active library id from the window's pane, falling back to the
  * user library. Never throws (returns 0 in the worst case).
  */
@@ -271,7 +299,7 @@ function resolveLibraryID(win: any): number {
   const ZoteroPane = win?.ZoteroPane;
   try {
     return (
-      ZoteroPane?.getSelectedLibraryID?.() ??
+      paneLibraryID(ZoteroPane) ??
       Zotero.Libraries.userLibraryID ??
       0
     );
@@ -286,10 +314,10 @@ function resolveLibraryID(win: any): number {
 
 /**
  * Gather the regular items for a SOURCE (or legacy scope) from the active
- * window:
- *  - "library":   every item in the selected library (getAll(libID, true)).
- *  - "set":       the curated Insights set for the selected library, resolved
- *                 from `insightsSet.list(libraryID)` via Zotero.Items.get.
+ * window, ALWAYS minus the per-library EXCLUDED ids (insightsSet):
+ *  - "library" / "set": the whole selected library (getAll(libID, true)) minus
+ *                 excluded items. Both sources resolve to the same analysis
+ *                 scope now: "My Library minus excluded".
  *  - "view":      (legacy) the current collection / saved search rows, with a
  *                 fallback to whatever the items view currently holds.
  *  - "selection": (legacy) the items currently selected in the pane.
@@ -307,21 +335,9 @@ export async function gatherItems(
 
   let raw: Zotero.Item[] = [];
 
-  if (source === "set") {
-    try {
-      const ids = insightsSet.list(libraryID) || [];
-      if (ids.length) {
-        const got = Zotero.Items.get(ids as any);
-        // Zotero.Items.get returns a single item for a scalar id and an array
-        // for an array; we always pass an array, so normalize defensively.
-        raw = (Array.isArray(got) ? got : got ? [got] : []) as Zotero.Item[];
-      } else {
-        raw = [];
-      }
-    } catch {
-      raw = [];
-    }
-  } else if (source === "library") {
+  if (source === "set" || source === "library") {
+    // Both map to the same scope: the whole library (we drop excluded ids
+    // below, after the regular-item filter).
     try {
       const all = await Zotero.Items.getAll(libraryID, true);
       raw = (all as Zotero.Item[]) || [];
@@ -360,6 +376,33 @@ export async function gatherItems(
     }
   }
 
-  const items = (raw || []).filter(isUsableItem);
+  const usable = (raw || []).filter(isUsableItem);
+  // Resolve the analysis scope from the dual-mode store via the canonical
+  // isInScope rule (shared with scope.ts so the membership logic cannot drift).
+  // The active list is the exclude list in exclude mode and the include list in
+  // include mode; isInScope handles the empty-active cases (empty include =>
+  // empty scope; empty exclude => whole library).
+  let mode: "exclude" | "include" = "exclude";
+  let active: Set<number> = new Set();
+  try {
+    mode = insightsSet.getMode(libraryID);
+    active = new Set(insightsSet.list(libraryID) || []);
+  } catch {
+    mode = "exclude";
+    active = new Set();
+  }
+
+  const items =
+    mode === "exclude" && active.size === 0
+      ? usable // fast path: whole library
+      : usable.filter((it) => {
+          try {
+            return isInScope(mode, active, it.id);
+          } catch {
+            // On a per-item failure, default to the safer scope: keep the item
+            // in exclude mode (whole library), drop it in include mode.
+            return mode !== "include";
+          }
+        });
   return { items, libraryID };
 }

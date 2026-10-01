@@ -15,6 +15,7 @@
 
 import type { VizModule, VizContext, ThemeInfo, ExportResult } from "../types";
 import { insightsSet } from "../set/store";
+import { paneLibraryID } from "../data/extract";
 
 export function createSetView(): VizModule {
   return new SetView();
@@ -58,7 +59,7 @@ export class SetView implements VizModule {
     const win = this.ctx?.win as any;
     let id: number | undefined;
     try {
-      id = win?.ZoteroPane?.getSelectedLibraryID?.();
+      id = paneLibraryID(win?.ZoteroPane);
     } catch {
       id = undefined;
     }

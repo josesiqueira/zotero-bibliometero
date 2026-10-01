@@ -1,4 +1,5 @@
 import { insightsSet } from "./store";
+import { paneLibraryID } from "../data/extract";
 
 /**
  * Right-click context menus for the Insights curated set.
@@ -83,7 +84,7 @@ function getSelectedRegularItems(win: AnyWindow): any[] {
 function getSelectionLibraryID(win: AnyWindow, items: any[]): number | null {
   try {
     const pane = win.ZoteroPane;
-    const fromPane = pane?.getSelectedLibraryID?.();
+    const fromPane = paneLibraryID(pane);
     if (typeof fromPane === "number") {
       return fromPane;
     }

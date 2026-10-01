@@ -32,6 +32,7 @@ import { insightsSet } from "../set/store";
 import {
   gatherItems,
   toRecord,
+  paneLibraryID,
   type ItemRecord,
   type GatherSource,
 } from "./extract";
@@ -192,7 +193,7 @@ export function createDataAccessors(
       const win = opts.getWin?.();
       const pane = win?.ZoteroPane;
       return (
-        pane?.getSelectedLibraryID?.() ??
+        paneLibraryID(pane) ??
         Zotero.Libraries.userLibraryID ??
         0
       );

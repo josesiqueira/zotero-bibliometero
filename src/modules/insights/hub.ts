@@ -35,6 +35,7 @@ import { DockHost } from "./hosts/dock";
 import { TabHost } from "./hosts/tab";
 import type { HostController } from "./hosts/types";
 import { insightsSet } from "./set/store";
+import { paneLibraryID } from "./data/extract";
 
 const BUTTON_ID = "bibliometero-insights-button";
 const CSS_LINK_ID = "bibliometero-insights-css";
@@ -595,7 +596,7 @@ export const InsightsHub = (() => {
   function curatedCount(st: WinState): number {
     try {
       const libraryID =
-        (st.win as any).ZoteroPane?.getSelectedLibraryID?.() ??
+        paneLibraryID((st.win as any).ZoteroPane) ??
         Zotero.Libraries.userLibraryID ??
         0;
       return insightsSet.count(libraryID);

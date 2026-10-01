@@ -264,6 +264,33 @@ function isUsableItem(it: any): boolean {
 }
 
 /**
+ * Library id of the pane's current selection. Zotero 10 removed
+ * ZoteroPane.getSelectedLibraryID() (it now logs an error) in favour of
+ * getSelectedLibraryIDs(); prefer the new accessor and fall back to the old
+ * one on Zotero 7 to 9. Never throws; undefined when nothing is selected.
+ */
+export function paneLibraryID(pane: any): number | undefined {
+  try {
+    if (pane && typeof pane.getSelectedLibraryIDs === "function") {
+      const ids = pane.getSelectedLibraryIDs();
+      const first = Array.isArray(ids)
+        ? ids[0]
+        : ids instanceof Set
+          ? [...ids][0]
+          : undefined;
+      if (typeof first === "number") return first;
+    }
+    if (pane && typeof pane.getSelectedLibraryID === "function") {
+      const id = pane.getSelectedLibraryID();
+      if (typeof id === "number") return id;
+    }
+  } catch {
+    /* fall through */
+  }
+  return undefined;
+}
+
+/**
  * Resolve the active library id from the window's pane, falling back to the
  * user library. Never throws (returns 0 in the worst case).
  */
@@ -271,7 +298,7 @@ function resolveLibraryID(win: any): number {
   const ZoteroPane = win?.ZoteroPane;
   try {
     return (
-      ZoteroPane?.getSelectedLibraryID?.() ??
+      paneLibraryID(ZoteroPane) ??
       Zotero.Libraries.userLibraryID ??
       0
     );

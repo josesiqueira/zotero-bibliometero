@@ -2,7 +2,7 @@
   "name": "zotero-bibliometero",
   "type": "module",
   "version": "0.0.2",
-  "description": "A Zotero 9 plugin that visualizes your library as an interactive force-directed knowledge graph: connect items by related links, shared authors, or shared tags. Dependency-free.",
+  "description": "An Insights panel for Zotero with six interactive library visualizations: co-authorship and author/paper networks, publications per year, top sources, top authors, and type/collection composition. PNG/SVG export. Dependency-free.",
   "config": {
     "addonName": "Zotero Bibliometero",
     "addonID": "zotero-bibliometero@jose.local",

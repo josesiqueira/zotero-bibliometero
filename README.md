@@ -1,9 +1,8 @@
 # Zotero Bibliometero
 
-[![Zotero 9](https://img.shields.io/badge/Zotero-9-CC2936?style=flat-square&logo=zotero&logoColor=white)](https://www.zotero.org)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg?style=flat-square)](LICENSE)
 
-Zotero Bibliometero adds an **Insights** panel to Zotero 9: a chart-icon button in the
+Zotero Bibliometero adds an **Insights** panel to Zotero: a chart-icon button in the
 tab bar opens a dedicated tab with six interactive visualizations of your library. It
 is dependency-free (the networks are hand-rolled on a 2D canvas, the charts are plain
 SVG; no PIXI, no d3, no Chart.js).
@@ -30,7 +29,7 @@ SVG; no PIXI, no d3, no Chart.js).
 ## Install
 
 Download `zotero-bibliometero.xpi` from the [latest release](../../releases/latest),
-then in Zotero: Tools, Plugins, gear icon, Install Plugin From File. Requires Zotero 9.
+then in Zotero: Tools, Plugins, gear icon, Install Plugin From File.
 
 ## Settings
 

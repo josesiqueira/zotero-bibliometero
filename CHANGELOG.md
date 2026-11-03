@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-11-03
+
 ### Added
 
 - A documentation website on GitHub Pages, built from the same source files as the README.
@@ -16,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- New plugin icon: a small network in a rounded tile, in the same style as Zotero Watch Folder.
 - Co-authorship now shows research groups instead of a tangle of one-off authors: authors with at least 2 items (raised automatically so the map stays readable), coloured by group (Louvain, as in VOSviewer and bibliometrix), with labels that never overlap. Items with more than 25 authors no longer add links.
 - Author / paper now answers which of your items come from the same people: it shows repeat authors and the items they link, coloured by year, instead of the items with the longest author lists.
 - Clicking a bar, slice or author now selects exactly the items it counts, in the library the panel shows. Before, it typed the label into the search box, which found nothing for authors and too many items for years and sources, and always jumped to My Library.
@@ -61,5 +64,6 @@ First release.
 
 - No longer logs a "getSelectedLibraryID() was removed" error on every library lookup.
 
-[Unreleased]: https://github.com/josesiqueira/zotero-bibliometero/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/josesiqueira/zotero-bibliometero/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/josesiqueira/zotero-bibliometero/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/josesiqueira/zotero-bibliometero/releases/tag/v0.0.2

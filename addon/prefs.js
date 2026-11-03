@@ -1,4 +1,3 @@
-/* eslint-disable no-undef */
 // Default preferences for Zotero Bibliometero.
 // The scaffold prepends the prefs prefix (extensions.zotero.zoterobibliometero.) to each key.
 

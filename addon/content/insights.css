@@ -21,7 +21,8 @@
   min-height: 120px;
   box-sizing: border-box;
   overflow: hidden;
-  border-top: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
+  border-top: 1px solid
+    var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
   background: var(--bibliometero-chart-bg, #fafafa);
   color: var(--bibliometero-chart-fg, #222);
   font: menu;
@@ -70,7 +71,8 @@
   padding: 4px 8px;
   min-height: 32px;
   overflow: hidden;
-  border-bottom: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
+  border-bottom: 1px solid
+    var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
 }
 
 /* ---- scrollable body (viewport + status) ---- */
@@ -147,7 +149,8 @@
 }
 
 .bm-seg-btn + .bm-seg-btn {
-  border-inline-start: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.4));
+  border-inline-start: 1px solid
+    var(--bibliometero-graph-border, rgba(128, 128, 128, 0.4));
 }
 
 .bm-seg-btn:hover {
@@ -199,7 +202,8 @@
   opacity: 0.85;
   max-height: 4.2em;
   overflow: hidden;
-  border-top: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
+  border-top: 1px solid
+    var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
 }
 
 .bm-hub-status.bm-warn {
@@ -219,7 +223,7 @@
   --bibliometero-chart-bg: #fafafa;
   --bibliometero-chart-fg: #222222;
   --bibliometero-chart-muted: #6b6b6b;
-  --bibliometero-chart-grid: rgba(0, 0, 0, 0.10);
+  --bibliometero-chart-grid: rgba(0, 0, 0, 0.1);
   color: #222;
   background: #fafafa;
 }

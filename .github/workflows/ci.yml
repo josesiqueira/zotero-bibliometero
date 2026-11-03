@@ -27,6 +27,9 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      - name: Lint (prettier and eslint)
+        run: npm run lint:check
+
       - name: Unit tests
         # The data layer (aggregation, author identity, grouping) is pure and
         # runs under Node; the live harness in test/live/ needs a real Zotero.

@@ -4,6 +4,7 @@ Two features, one rework. This file + the frozen contracts (`insights/types.ts`,
 `insights/set/types.ts`) are the source of truth.
 
 ## A. Layout: resizable bottom dock (primary) + pop-out tab
+
 - The chart button toggles a BOTTOM DOCK inside the library view (not a tab by default).
 - DOM: inject into `#zotero-items-pane-container` (a vbox/column):
   `#zotero-items-pane` (flex:1, the list shrinks) + a `<splitter>` + `#bibliometero-dock`
@@ -18,6 +19,7 @@ Two features, one rework. This file + the frozen contracts (`insights/types.ts`,
   layout cleanly on teardown/disable.
 
 ## B. Source + curated set
+
 - Source toggle in the dock header: `Whole library` (default) | `Curated set (N)`.
   Backed by pref `insights.source` ("library" | "set"). Replaces the old hub.scope modes
   (library/view/selection are dropped).
@@ -33,6 +35,7 @@ Two features, one rework. This file + the frozen contracts (`insights/types.ts`,
 - Changing the source or the set refreshes the views live (existing onDataChange path).
 
 ## File ownership (5 coding agents, DISJOINT files)
+
 - Agent 1 LAYOUT/HOSTING: `insights/hub.ts` (refactor: extract a `buildShell` that mounts
   nav-strip + topbar + viewport into a given host; orchestrate dock-default + maximize ->
   pop-out-to-tab + restore; horizontal nav; source toggle in header), `insights/hosts/dock.ts`,
@@ -43,7 +46,7 @@ Two features, one rework. This file + the frozen contracts (`insights/types.ts`,
 - Agent 2 SET STORE: `insights/set/store.ts` -> exports singleton `insightsSet`
   implementing `InsightsSetStore`. Pref-backed JSON, per library, notifier prune, subscribe.
 - Agent 3 CONTEXT MENUS: `insights/set/contextMenus.ts` -> `ContextMenus.registerWindow(win)/
-  unregisterWindow(win)`: item-tree right-click Add/Remove (multi-select, membership-aware
+unregisterWindow(win)`: item-tree right-click Add/Remove (multi-select, membership-aware
   label) and collection-tree right-click "Add collection to Insights". Uses `insightsSet`.
 - Agent 4 SET VIEW: `insights/views/setView.ts` -> `class SetView implements VizModule`
   (kind "manage", id "set"): the management list. Uses `insightsSet` + ctx.openItem.
@@ -52,6 +55,7 @@ Two features, one rework. This file + the frozen contracts (`insights/types.ts`,
   "library" working. The accessors already cache per scope; treat source as the scope key.
 
 ## Orchestrator-owned (frozen, already written)
+
 - `insights/types.ts` (VizKind += "manage"), `insights/set/types.ts`, `insights/views/index.ts`
   (registers the 7 views incl. "set"), `src/hooks.ts` wiring (context menus + set init),
   final integration + live test.

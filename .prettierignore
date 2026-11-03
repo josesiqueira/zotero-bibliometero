@@ -10,3 +10,5 @@ pnpm-lock.yaml
 README.md
 _site
 .github/badges
+# XUL fragment: prettier would collapse it to one line
+addon/content/preferences.xhtml

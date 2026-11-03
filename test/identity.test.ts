@@ -71,6 +71,59 @@ describe("author identity", function () {
     assert.strictEqual(d.entries[0].count, 2);
   });
 
+  it("joins a compound surname split differently (same name words)", function () {
+    const d = buildTopAuthors(
+      [
+        rec({ creators: [A("Dias Canedo", "Edna")] }),
+        rec({ creators: [A("Canedo", "Edna Dias")] }),
+        rec({ creators: [A("Dias Canedo", "Edna")] }),
+      ],
+      0,
+    );
+    assert.lengthOf(d.entries, 1);
+    assert.strictEqual(d.entries[0].count, 3);
+    assert.strictEqual(d.entries[0].label, "Dias Canedo, Edna");
+  });
+
+  it("joins particle and shortened forms of one compound name", function () {
+    const d = buildTopAuthors(
+      [
+        rec({ creators: [A("Siqueira De Cerqueira", "José Antonio")] }),
+        rec({ creators: [A("Cerqueira", "Jose Antonio Siqueira De")] }),
+        rec({ creators: [A("De Cerqueira", "José Siqueira")] }),
+        rec({ creators: [A("de Cerqueira", "José Siqueira")] }),
+        rec({ creators: [A("Siqueira Cerqueira", "José")] }),
+        rec({ creators: [A("Cerqueira", "Jose Siqueira De")] }),
+      ],
+      0,
+    );
+    assert.lengthOf(d.entries, 1);
+    assert.strictEqual(d.entries[0].count, 6);
+  });
+
+  it("leaves a short form alone when two longer names contain it", function () {
+    const d = buildTopAuthors(
+      [
+        rec({ creators: [A("Silva Santos", "Maria")] }),
+        rec({ creators: [A("Silva Santos Oliveira", "Maria")] }),
+        rec({ creators: [A("Silva Santos Pereira", "Maria")] }),
+      ],
+      0,
+    );
+    assert.lengthOf(d.entries, 3);
+  });
+
+  it("does not join two-word names written in swapped order", function () {
+    const d = buildTopAuthors(
+      [
+        rec({ creators: [A("Lee", "Kim")] }),
+        rec({ creators: [A("Kim", "Lee")] }),
+      ],
+      0,
+    );
+    assert.lengthOf(d.entries, 2);
+  });
+
   it("carries the item ids behind each author", function () {
     const a = rec({ creators: [A("Doe", "Jane")] });
     const b = rec({ creators: [A("Doe", "Jane")] });

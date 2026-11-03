@@ -485,6 +485,16 @@ export const InsightsHub = (() => {
     if (!st) return;
     const keepId = st.activeId || defaultView();
     closeShell(st);
+    // Closing the Insights tab makes Zotero select its neighbour, often a PDF
+    // reader tab. The dock lives under the item list, so show the library.
+    try {
+      (win as any).Zotero_Tabs?.select?.("zotero-pane");
+    } catch (e) {
+      ztoolkit.log(
+        "[Bibliometero Insights] could not select the library tab",
+        e,
+      );
+    }
     openIn(st, dockHost, keepId);
   }
 
@@ -556,6 +566,11 @@ export const InsightsHub = (() => {
     const spacer = el(doc, "div", "bm-hub-topbar-spacer");
     header.appendChild(spacer);
 
+    // Source, export and maximize stay together, so when the header wraps
+    // on a narrow panel they move to the next row as one group.
+    const actions = el(doc, "div", "bm-hub-actions");
+    header.appendChild(actions);
+
     // ---- header: source toggle (segmented) ----
     const sourceWrap = el(doc, "div", "bm-source-toggle");
     const srcLib = el(
@@ -569,7 +584,7 @@ export const InsightsHub = (() => {
     srcSet.addEventListener("click", () => onSourceChange(st, "set"));
     sourceWrap.appendChild(srcLib);
     sourceWrap.appendChild(srcSet);
-    header.appendChild(sourceWrap);
+    actions.appendChild(sourceWrap);
     st.sourceLibraryBtn = srcLib;
     st.sourceSetBtn = srcSet;
     updateSourceUI(st);
@@ -582,7 +597,7 @@ export const InsightsHub = (() => {
       "Export PNG",
     ) as HTMLButtonElement;
     exportPng.addEventListener("click", () => void doExport(st, "png"));
-    header.appendChild(exportPng);
+    actions.appendChild(exportPng);
 
     const exportSvg = el(
       doc,
@@ -591,7 +606,7 @@ export const InsightsHub = (() => {
       "Export SVG",
     ) as HTMLButtonElement;
     exportSvg.addEventListener("click", () => void doExport(st, "svg"));
-    header.appendChild(exportSvg);
+    actions.appendChild(exportSvg);
     st.exportButtons = [exportPng, exportSvg];
 
     // ---- header: host toggle (Maximize in dock / Restore in tab) ----
@@ -610,7 +625,7 @@ export const InsightsHub = (() => {
       if (st.host?.kind() === "tab") restore(st.win);
       else maximize(st.win);
     });
-    header.appendChild(hostToggle);
+    actions.appendChild(hostToggle);
     st.hostToggleBtn = hostToggle;
 
     // ---- body: viewport + status ----

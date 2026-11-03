@@ -67,10 +67,12 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  /* Wrap to a second row when the panel is narrow, so every view tab and
+     button stays visible (a hidden horizontal scroll hid half the views). */
+  flex-wrap: wrap;
+  gap: 4px 8px;
   padding: 4px 8px;
   min-height: 32px;
-  overflow: hidden;
   border-bottom: 1px solid
     var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
 }
@@ -87,12 +89,11 @@
 /* ---- horizontal nav tab-strip ---- */
 .bm-nav-strip {
   flex: 0 1 auto;
+  max-width: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
 }
 
 .bm-nav-tab {
@@ -126,6 +127,14 @@
 
 .bm-hub-topbar-spacer {
   flex: 1 1 auto;
+}
+
+.bm-hub-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
 }
 
 /* ---- source toggle (segmented) ---- */
@@ -338,6 +347,11 @@
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+}
+
+/* Long names end in an ellipsis instead of being cut mid-letter. */
+.bm-legend-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

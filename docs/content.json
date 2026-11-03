@@ -1,7 +1,12 @@
 {
-  "$comment": "User-facing facts that are not views: the panel, the right-click commands and the settings. The view list comes from src/modules/insights/views/catalog.json. `npm run docs` writes the generated parts of README.md and builds the GitHub Pages site from both files; `npm run docs:check` fails when they disagree with the code (see scripts/docs.mjs).",
+  "$comment": "User-facing facts that are not views: the panel, the right-click commands, the settings, the install and first-use steps. Screenshots live in docs/images as <name>-light.png and <name>-dark.png. The view list comes from src/modules/insights/views/catalog.json. `npm run docs` writes the generated parts of README.md and builds the GitHub Pages site from both files; `npm run docs:check` fails when they disagree with the code (see scripts/docs.mjs).",
   "tagline": "See your Zotero library as networks and charts.",
-  "intro": "Zotero Bibliometero adds an Insights panel to Zotero. Click the chart button in the tab bar and a panel opens under your item list that answers three questions about the literature you collected: whose work dominates and who works with whom, which journals and conferences hold your field, and how your library spreads over time. Every bar, slice and node leads back to the exact items behind it. Everything runs inside Zotero, with no account and no data leaving your computer.",
+  "intro": "Zotero Bibliometero adds an Insights panel to Zotero that turns your library into networks and charts. It shows which research groups recur in your reading, which journals and conferences hold your field, and how your library spreads over time. Click any bar, slice or author and Zotero selects exactly those items. Everything runs inside Zotero, with no account and no data leaving your computer.",
+  "hero": {
+    "image": "hero",
+    "alt": "Zotero with the Insights panel open under the item list, showing a co-authorship network coloured by research group.",
+    "caption": "The Insights panel under the item list, showing the research groups in a library of about 500 items."
+  },
   "panel": [
     {
       "title": "Opens under your item list",
@@ -79,6 +84,19 @@
     "Download zotero-bibliometero.xpi from the latest release.",
     "In Zotero, open Tools, Plugins.",
     "Click the gear icon, choose Install Plugin From File, and pick the downloaded file."
+  ],
+  "firstUse": [
+    {
+      "text": "Click the chart button at the right end of the tab bar. The Insights panel opens under your item list.",
+      "image": "button",
+      "alt": "The Insights chart button at the right end of the Zotero tab bar, circled."
+    },
+    {
+      "text": "Pick a view from the strip at the top of the panel."
+    },
+    {
+      "text": "Click a bar or a slice to select those items in your library. On the network maps, click an author to see their co-authors and double-click to select their items."
+    }
   ],
   "installNote": "Installed copies update themselves when a new version is released."
 }

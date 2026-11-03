@@ -194,7 +194,7 @@ export class CompositionChart implements VizModule {
     this.heading(root, "Item types", "", theme);
     const slices = this.typeSlices(d);
     const top = 26;
-    const size = Math.max(60, Math.min(h - top - 4, w * 0.45, 300));
+    const size = Math.max(60, Math.min(h - top - 4, w * 0.45, 380));
     const cx = size / 2;
     const cy = top + size / 2;
     const outer = size / 2 - 2;

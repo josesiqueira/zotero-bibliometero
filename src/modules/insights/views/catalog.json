@@ -1,9 +1,10 @@
 {
-  "$comment": "Single source of truth for the Insights views. The plugin reads id, label and tooltip (nav strip order, labels, hover text). The documentation generator (scripts/docs.mjs) reads every field to build the README and the GitHub Pages site. Add or change a view here, then run `npm run docs`.",
+  "$comment": "Single source of truth for the Insights views. The plugin reads id, label and tooltip (nav strip order, labels, hover text). The documentation generator (scripts/docs.mjs) reads every field, including `question` (the heading in the docs) and `image` (screenshots docs/images/<image>-light.png and -dark.png), to build the README and the GitHub Pages site. Add or change a view here, then run `npm run docs`.",
   "views": [
     {
       "id": "coauthorship",
       "label": "Co-authorship",
+      "question": "Which research groups keep coming up in my reading?",
       "kind": "network",
       "tooltip": "Which research groups recur in your reading: authors with several items, linked when they share an item, coloured by group. Click an author to see their co-authors.",
       "summary": "The research groups in your reading: authors who appear on several of your items, linked when they wrote together, coloured by group.",
@@ -14,11 +15,13 @@
         "Click an author to highlight their co-authors and list them in the status line; double-click to select their items in your library.",
         "Items with more than 25 authors count toward each author but add no links, so large consortium papers do not swamp the map.",
         "Drag a node to pin it, pan the map, zoom with the mouse wheel. Fit, Re-layout and Release pins are in the header."
-      ]
+      ],
+      "image": "coauthorship"
     },
     {
       "id": "author-paper",
       "label": "Author / paper",
+      "question": "Which of my items come from the same people?",
       "kind": "network",
       "tooltip": "Which of your items come from the same people: repeat authors and the items they link, items coloured by year. Click an item to select it.",
       "summary": "Which of your items come from the same people: authors who appear on several items, joined to those items.",
@@ -27,22 +30,26 @@
         "Items are labelled by first author and year and coloured by publication year; the full title is in the tooltip.",
         "Click an item to select it in your library, double-click to open it. Click an author to highlight their items, double-click to select them.",
         "On a curated set every author is shown, so you can see exactly who connects the items you picked."
-      ]
+      ],
+      "image": "author-paper"
     },
     {
       "id": "pubs-per-year",
       "label": "Publications / year",
+      "question": "How recent is the literature I collected?",
       "kind": "chart",
       "tooltip": "How many of your items were published each year. Click a bar to select those items.",
       "summary": "Your items per publication year, with every year in the range shown and a separate bar for items with no date.",
       "details": [
         "The current year is drawn lighter and marked as still in progress, so a short bar is not read as a decline.",
         "Hover a bar for the count; click it to select exactly those items in your library."
-      ]
+      ],
+      "image": "pubs-per-year"
     },
     {
       "id": "top-sources",
       "label": "Top sources",
+      "question": "Where is my field published?",
       "kind": "chart",
       "tooltip": "The journals, proceedings and series that hold the most of your items. Click a bar to select those items.",
       "summary": "A ranked bar chart of the journals, conference proceedings, book series and repositories that hold the most of your items.",
@@ -50,11 +57,13 @@
         "A book's publisher, a thesis' university or a report's institution is not a source; those items count as having no source unless they belong to a series.",
         "Spelling variants (case, accents, punctuation, & and \"and\") are counted as one source.",
         "Choose how many to show with the Show top box; click a bar to select exactly those items."
-      ]
+      ],
+      "image": "top-sources"
     },
     {
       "id": "top-authors",
       "label": "Top authors",
+      "question": "Whose work do I collect most?",
       "kind": "chart",
       "tooltip": "Authors ranked by how many of your items they wrote. Click one to select their items.",
       "summary": "A ranked bar chart of authors by the number of your items they wrote.",
@@ -62,11 +71,13 @@
         "Counts authors only (the item type's main creator role); editors are used only for items with no authors.",
         "Name variants are joined: accents and case are ignored, and an initials-only form (Floridi, L.) joins the full name (Floridi, Luciano) when only one person matches. Different full names that share an initial stay apart.",
         "Choose how many to show with the Show top box; click a bar to select exactly those items."
-      ]
+      ],
+      "image": "top-authors"
     },
     {
       "id": "composition",
       "label": "Composition",
+      "question": "What kinds of items do I have, and where are they filed?",
       "kind": "chart",
       "tooltip": "Your items by type, and how they are filed in your top-level collections. Click a slice or bar to select those items.",
       "summary": "A donut of your items by item type, and bars for your top-level collections (subcollections included).",
@@ -74,11 +85,13 @@
         "Item types beyond the six largest are grouped as Other types.",
         "Collections are bars, not slices, because an item can be in several collections. Unfiled shows items in no collection.",
         "Click a slice to select those items; click a collection bar to open the collection."
-      ]
+      ],
+      "image": "composition"
     },
     {
       "id": "set",
       "label": "Curated set",
+      "question": "How do I look at just the items for one project?",
       "kind": "manage",
       "tooltip": "Your curated set: the hand-picked items Insights can focus on. Add items here or by right-clicking them in the library.",
       "summary": "The items in your curated set, a hand-picked group that every view can focus on.",
@@ -86,7 +99,8 @@
         "Each row shows the title, first author and year. Double-click a row to select the item in your library.",
         "Remove one item with its trash button, or empty the set with Clear all (it asks first).",
         "Add current selection adds the items selected in the item list."
-      ]
+      ],
+      "image": "set"
     }
   ]
 }

@@ -26,6 +26,16 @@ and commit `README.md` with your change. Settings defaults and choices are read
 straight from `addon/prefs.js` and `addon/content/preferences.xhtml`, so they
 never need to be typed twice.
 
+### Screenshots
+
+The pictures in the README and on the website live in `docs/images/`. Each one
+exists twice, `NAME-light.png` and `NAME-dark.png`, and GitHub shows the one that
+matches the reader's theme. A view's picture is named by its `image` field in
+`catalog.json`; the hero and the first-use pictures are named in
+`docs/content.json`. When a view looks different after your change, take new
+screenshots in both themes (about 1800 pixels wide) and replace both files.
+`npm run docs:check` fails when a named picture is missing in either theme.
+
 ### What CI enforces
 
 The `docs` job in `.github/workflows/ci.yml` fails when:

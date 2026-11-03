@@ -90,6 +90,8 @@ export class ForceSim {
 
   private alpha = 1;
   private center = { x: 0, y: 0 };
+  /** Width / height of the space the map is shown in (1 = square). */
+  private aspect = 1;
   /** True once the velocity-gated settle has fired (positions frozen). */
   private atRest = false;
 
@@ -109,6 +111,15 @@ export class ForceSim {
     if (opts.gravity !== undefined) this.gravity = opts.gravity;
     if (opts.alphaDecay !== undefined) this.alphaDecay = opts.alphaDecay;
     if (opts.theta !== undefined) this.theta2 = opts.theta * opts.theta;
+  }
+
+  /**
+   * Shape of the space the map is shown in (width / height). Gravity is
+   * weaker sideways on a wide panel, so the layout fills the width instead of
+   * leaving a round blob in the middle. Clamped to 1 to 2.5.
+   */
+  setAspect(aspect: number): void {
+    this.aspect = isFinite(aspect) ? Math.min(2.5, Math.max(1, aspect)) : 1;
   }
 
   /** Set the logical center toward which gravity pulls (canvas center). */
@@ -276,8 +287,9 @@ export class ForceSim {
   private applyGravity(alpha: number): void {
     const g = this.gravity * alpha;
     if (g === 0) return;
+    const gx = g / this.aspect;
     for (const node of this.nodes) {
-      if (node.fx === null) node.vx += (this.center.x - node.x) * g;
+      if (node.fx === null) node.vx += (this.center.x - node.x) * gx;
       if (node.fy === null) node.vy += (this.center.y - node.y) * g;
     }
   }

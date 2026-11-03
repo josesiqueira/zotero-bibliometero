@@ -132,6 +132,11 @@ export class AuthorPaperView extends NetworkViewBase<BipartiteData> {
           color: yearColor(max, min, max),
         });
     }
+    if (d.papers.some((p) => p.year === null))
+      entries.push({
+        label: "Item with no date",
+        color: yearColor(null, 0, 0),
+      });
     return { entries, note: "Item colour: publication year." };
   }
 

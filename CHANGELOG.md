@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The README and the website now show real screenshots of every view, with the question each view answers and how to read it.
+- The author and paper map lists "Item with no date" in its legend when some items have no year.
+
+### Changed
+
+- Network maps spread out to fill wide panels and keep clear of the legend, instead of forming a round cluster in the middle.
+- Chart axes end close to the largest value (for example at 15 for a maximum of 12, not at 20).
+- The item-types donut can grow larger in tall panels.
+
+### Fixed
+
+- On narrow panels the view names wrap to a second row instead of hiding behind a scroll, so every view stays reachable.
+- The source, export and restore buttons stay together when the panel header wraps.
+- One author written in several ways (compound surnames split differently, with or without "de", "da" or "van", or shortened) now counts as one person.
+- Restore always returns to the library tab, not to an open PDF.
+- Long names in a network legend end in an ellipsis instead of being cut mid-letter.
+
 ## [0.0.3] - 2026-11-03
 
 ### Added

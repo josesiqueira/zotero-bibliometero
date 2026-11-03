@@ -211,12 +211,9 @@ h3.sub {
   margin: 2.5rem 0 1rem;
 }
 
-/* Views: one row each, drawing beside the text */
+/* Views: the question, a real screenshot, then the details folded away */
 .view {
-  display: grid;
-  grid-template-columns: 11rem minmax(0, 1fr);
-  gap: 1.75rem;
-  padding: 1.5rem 0;
+  padding: 2rem 0;
   border-bottom: 1px solid var(--rule);
 }
 .view:last-child {
@@ -226,58 +223,61 @@ h3.sub {
   font: 560 1.4rem/1.2 var(--serif);
   margin: 0 0 0.35rem;
 }
-.view .summary {
-  margin: 0 0 0.6rem;
-  max-width: 62ch;
+.view .question {
+  font: 560 1.1rem/1.4 var(--sans);
+  margin: 0 0 0.25rem;
 }
-.view ul {
-  margin: 0;
+.view .summary {
+  margin: 0 0 1rem;
+  max-width: 64ch;
+  color: var(--muted);
+}
+.how {
+  margin-top: 0.75rem;
+}
+.how summary {
+  cursor: pointer;
+  color: var(--teal);
+  font-weight: 600;
+}
+.how ul {
+  margin: 0.6rem 0 0;
   padding-left: 1.1rem;
   color: var(--muted);
   max-width: 64ch;
 }
-.view li + li {
+.how li + li {
   margin-top: 0.2rem;
 }
 
-.drawing {
+/* Screenshots */
+.shot {
+  margin: 0;
+}
+.shot img {
+  display: block;
   width: 100%;
   height: auto;
-  color: var(--edge);
-  background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 10px;
-  padding: 0.5rem;
+  background: var(--surface);
 }
-.drawing .edges line,
-.drawing .axis {
-  stroke: var(--edge);
-  stroke-width: 1.2;
+.shot figcaption {
+  margin-top: 0.6rem;
+  color: var(--muted);
+  font-size: 0.95rem;
 }
-.drawing .n0 {
-  fill: var(--teal);
+.in-zotero {
+  padding-top: 0;
 }
-.drawing .n1 {
-  fill: var(--plum);
+.step-shot {
+  margin: 0.6rem 0 0.4rem;
 }
-.drawing .n2 {
-  fill: var(--ochre);
-}
-.drawing .muted {
-  fill: var(--rule);
-}
-.drawing .arc {
-  fill: none;
-  stroke-width: 11;
-}
-.drawing .a0 {
-  stroke: var(--teal);
-}
-.drawing .a1 {
-  stroke: var(--ochre);
-}
-.drawing .a2 {
-  stroke: var(--plum);
+.step-shot img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
 }
 
 /* Panel features: a definition list in two columns */
@@ -385,13 +385,6 @@ tbody th {
     grid-template-columns: 1fr;
     gap: 1.75rem;
     padding-top: 1rem;
-  }
-  .view {
-    grid-template-columns: 1fr;
-    gap: 0.9rem;
-  }
-  .view .drawing {
-    max-width: 14rem;
   }
   .features {
     grid-template-columns: 1fr;

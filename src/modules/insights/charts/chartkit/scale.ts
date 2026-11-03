@@ -78,41 +78,33 @@ export function bandScale(
 }
 
 /**
- * Round a maximum up to a visually "nice" value (1, 2, 2.5, 5 x 10^k) so the
- * top gridline sits on a clean number. Returns at least 1 for non-positive max.
+ * Tick step for an axis from 0 to `max` with about `count` intervals: 1, 2 or
+ * 5 times a power of ten, at least 1 because the charts count items
+ * (Heckbert's "nice numbers", Graphics Gems, 1990).
  */
-export function niceMax(max: number): number {
-  if (!isFinite(max) || max <= 0) return 1;
-  const exp = Math.floor(Math.log10(max));
-  const pow = Math.pow(10, exp);
-  const frac = max / pow;
-  let niceFrac: number;
-  if (frac <= 1) niceFrac = 1;
-  else if (frac <= 2) niceFrac = 2;
-  else if (frac <= 2.5) niceFrac = 2.5;
-  else if (frac <= 5) niceFrac = 5;
-  else niceFrac = 10;
-  return niceFrac * pow;
+function niceStep(max: number, count: number): number {
+  const raw = max / Math.max(1, count);
+  if (!(raw > 1)) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const frac = raw / pow;
+  const nice = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  return nice * pow;
 }
 
 /**
- * Produce up to ~`count` evenly spaced "nice" tick values across [0, max].
- * Ticks are integer-friendly for small counts (typical for item-count charts).
+ * Top of the value axis: the largest value rounded up to the next tick step,
+ * so the axis ends close to the data (12 gives 15, not 20). At least 1.
  */
+export function niceMax(max: number, count = 5): number {
+  if (!isFinite(max) || max <= 0) return 1;
+  const step = niceStep(max, count);
+  return Math.ceil(max / step - 1e-9) * step;
+}
+
+/** Tick values from 0 to niceMax(max), one step apart. */
 export function niceTicks(max: number, count = 5): number[] {
-  const top = niceMax(max);
-  if (top <= 0) return [0];
-  const rawStep = top / Math.max(1, count);
-  const exp = Math.floor(Math.log10(rawStep));
-  const pow = Math.pow(10, exp);
-  const frac = rawStep / pow;
-  let niceFrac: number;
-  if (frac <= 1) niceFrac = 1;
-  else if (frac <= 2) niceFrac = 2;
-  else if (frac <= 2.5) niceFrac = 2.5;
-  else if (frac <= 5) niceFrac = 5;
-  else niceFrac = 10;
-  const step = niceFrac * pow;
+  const top = niceMax(max, count);
+  const step = niceStep(isFinite(max) && max > 0 ? max : 1, count);
   const ticks: number[] = [];
   for (let v = 0; v <= top + step * 0.5; v += step) {
     // Round away floating dust so labels read cleanly.

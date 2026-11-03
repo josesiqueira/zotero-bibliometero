@@ -194,6 +194,7 @@ export class NetworkView implements VizModule {
     this.buildToolbar(ctx);
     this.attachInteraction();
     this.renderLegend();
+    this.sim.setAspect(this.mapArea().w / this.mapArea().h);
     this.startLoop();
   }
 
@@ -216,6 +217,7 @@ export class NetworkView implements VizModule {
     if (this.destroyed || !this.canvas) return;
     const wasFit = this.autoFit || this.sim.settled;
     this.resizeCanvas(width, height);
+    this.sim.setAspect(this.mapArea().w / this.mapArea().h);
     if (wasFit && this.autoFit) this.fit();
     this.requestDraw();
   }
@@ -471,23 +473,34 @@ export class NetworkView implements VizModule {
   /** Zoom to show the whole graph (toolbar Fit, and while the layout settles). */
   private fit(): void {
     const b = this.fitBounds();
-    const vw = this.cssW;
-    const vh = this.cssH;
+    const a = this.mapArea();
     const scale = Math.min(
       2.5,
       Math.max(
         0.05,
         Math.min(
-          (vw - FIT_PADDING * 2) / b.width,
-          (vh - FIT_PADDING * 2) / b.height,
+          (a.w - FIT_PADDING * 2) / b.width,
+          (a.h - FIT_PADDING * 2) / b.height,
         ),
       ),
     );
     this.view = {
       scale,
-      tx: vw / 2 - (b.minX + b.width / 2) * scale,
-      ty: vh / 2 - (b.minY + b.height / 2) * scale,
+      tx: a.x + a.w / 2 - (b.minX + b.width / 2) * scale,
+      ty: a.h / 2 - (b.minY + b.height / 2) * scale,
     };
+  }
+
+  /**
+   * The part of the canvas the map is fitted into: everything right of the
+   * legend when the panel is wide enough, so no node hides behind it.
+   */
+  private mapArea(): { x: number; w: number; h: number } {
+    const vw = Math.max(1, this.cssW);
+    const vh = Math.max(1, this.cssH);
+    const lw = this.legendEl?.offsetWidth ?? 0;
+    const left = lw > 0 && vw - lw > 2 * vh * 0.8 ? lw + 40 : 0;
+    return { x: left, w: vw - left, h: vh };
   }
 
   // ---- Legend + toolbar ----------------------------------------------
@@ -515,7 +528,10 @@ export class NetworkView implements VizModule {
             this.style.neutral
           : this.style.neutral);
       row.appendChild(dot);
-      row.appendChild(doc.createTextNode(e.label));
+      const text = doc.createElement("span");
+      text.className = "bm-legend-text";
+      text.textContent = e.label;
+      row.appendChild(text);
       el.appendChild(row);
     }
     const note = doc.createElement("div");

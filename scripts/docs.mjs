@@ -196,6 +196,26 @@ for (const [file, text] of [
       `${file}: names a Zotero version ("${versionRe.exec(text)[0]}"). Remove it.`,
     );
 
+// Every screenshot the docs show exists in both themes.
+const IMAGE_DIR = "docs/images";
+const imageNames = [
+  ...views.map((v) => v.image),
+  content.hero.image,
+  ...content.firstUse.filter((s) => s.image).map((s) => s.image),
+];
+for (const v of views)
+  if (!v.question || !v.image)
+    fail(`catalog.json: view "${v.id}" needs "question" and "image".`);
+for (const name of imageNames)
+  for (const theme of ["light", "dark"])
+    if (
+      name &&
+      !fs.existsSync(path.join(ROOT, IMAGE_DIR, `${name}-${theme}.png`))
+    )
+      fail(
+        `${IMAGE_DIR}/${name}-${theme}.png is missing (a screenshot the docs show).`,
+      );
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -207,6 +227,28 @@ const esc = (s) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 const mdCell = (s) => String(s).replace(/\|/g, "\\|");
+
+/** Light and dark screenshot; GitHub and browsers pick the one matching the reader's theme. */
+function picture(name, alt, base, attrs = "") {
+  return [
+    "<picture>",
+    `  <source media="(prefers-color-scheme: dark)" srcset="${base}/${name}-dark.png">`,
+    `  <img src="${base}/${name}-light.png" alt="${esc(alt)}"${attrs}>`,
+    "</picture>",
+  ].join("\n");
+}
+
+/** The anchor GitHub gives a heading ("Author / paper" -> "author--paper"). */
+const slug = (s) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9 -]/g, "")
+    .replace(/ /g, "-");
+
+/** Install steps followed by the first-use steps, as one numbered list. */
+function startSteps() {
+  return [...content.install.map((text) => ({ text })), ...content.firstUse];
+}
 
 function settingRows() {
   return content.settings.items.map((s) => {
@@ -267,17 +309,36 @@ function mdToHtml(md) {
 
 function readmeSections() {
   const s = {};
+  const img = IMAGE_DIR;
+  s.hero = [
+    picture(content.hero.image, content.hero.alt, img),
+    "",
+    `<sub>${esc(content.hero.caption)}</sub>`,
+  ].join("\n");
+
   s.intro = content.intro;
 
   s.views = [
-    "| View | What it shows |",
+    "| View | The question it answers |",
     "|---|---|",
-    ...views.map((v) => `| ${mdCell(v.label)} | ${mdCell(v.summary)} |`),
+    ...views.map(
+      (v) =>
+        `| [${mdCell(v.label)}](#${slug(v.label)}) | ${mdCell(v.question)} |`,
+    ),
     "",
     ...views.flatMap((v) => [
-      `**${v.label}**`,
+      `### ${v.label}`,
+      "",
+      `**${v.question}** ${v.summary}`,
+      "",
+      picture(v.image, `${v.label} view: ${v.summary}`, img),
+      "",
+      "<details>",
+      "<summary>How to read it</summary>",
       "",
       ...v.details.map((d) => `- ${d}`),
+      "",
+      "</details>",
       "",
     ]),
   ]
@@ -306,15 +367,28 @@ function readmeSections() {
   ].join("\n");
 
   s.install = [
-    ...content.install.map(
-      (step, i) =>
-        `${i + 1}. ${step.replace("the latest release", `[the latest release](${REPO}/releases/latest)`)}`,
-    ),
+    ...startSteps().flatMap((step, i) => {
+      const line = `${i + 1}. ${step.text.replace("the latest release", `[the latest release](${REPO}/releases/latest)`)}`;
+      return step.image
+        ? [
+            line,
+            "",
+            // Indented, so the picture belongs to the step and the list keeps going.
+            picture(step.image, step.alt || "", img, ' width="300"')
+              .split("\n")
+              .map((l) => `   ${l}`)
+              .join("\n"),
+            "",
+          ]
+        : [line];
+    }),
     "",
     content.installNote,
     "",
     `Full guide: <${PAGES_URL}>`,
-  ].join("\n");
+  ]
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
   return s;
 }
 
@@ -339,143 +413,6 @@ function renderReadme(current) {
 // Site
 // ---------------------------------------------------------------------------
 
-/** Small drawing for each view, by id, falling back to the view's kind. */
-function viewDrawing(v) {
-  const ink = 'stroke="currentColor"';
-  const nodes = (pts, r = 3.2) =>
-    pts
-      .map(
-        ([x, y], i) =>
-          `<circle cx="${x}" cy="${y}" r="${i % 4 === 0 ? r + 2 : r}" class="n${i % 3}"/>`,
-      )
-      .join("");
-  const lines = (pairs, pts) =>
-    pairs
-      .map(
-        ([a, b]) =>
-          `<line x1="${pts[a][0]}" y1="${pts[a][1]}" x2="${pts[b][0]}" y2="${pts[b][1]}"/>`,
-      )
-      .join("");
-  const drawings = {
-    coauthorship: () => {
-      const p = [
-        [30, 40],
-        [52, 22],
-        [58, 52],
-        [80, 34],
-        [100, 18],
-        [104, 56],
-        [126, 40],
-        [76, 66],
-        [140, 22],
-        [18, 62],
-      ];
-      const e = [
-        [0, 1],
-        [0, 2],
-        [1, 3],
-        [2, 3],
-        [3, 4],
-        [3, 5],
-        [5, 6],
-        [4, 6],
-        [2, 7],
-        [6, 8],
-        [0, 9],
-        [7, 5],
-      ];
-      return `<g class="edges" ${ink}>${lines(e, p)}</g>${nodes(p)}`;
-    },
-    "author-paper": () => {
-      const papers = [
-        [40, 20],
-        [40, 50],
-        [120, 34],
-        [120, 64],
-      ];
-      const authors = [
-        [80, 12],
-        [80, 40],
-        [80, 68],
-        [20, 36],
-        [146, 48],
-      ];
-      const e = [
-        [0, 0],
-        [0, 1],
-        [1, 1],
-        [1, 2],
-        [2, 0],
-        [2, 1],
-        [3, 2],
-        [0, 3],
-        [1, 3],
-        [3, 4],
-        [2, 4],
-      ];
-      const l = e
-        .map(
-          ([a, b]) =>
-            `<line x1="${papers[a][0]}" y1="${papers[a][1]}" x2="${authors[b][0]}" y2="${authors[b][1]}"/>`,
-        )
-        .join("");
-      return `<g class="edges" ${ink}>${l}</g>${papers.map(([x, y]) => `<rect x="${x - 5}" y="${y - 5}" width="10" height="10" class="n1"/>`).join("")}${authors.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="4.5" class="n0"/>`).join("")}`;
-    },
-    "pubs-per-year": () =>
-      [8, 14, 11, 22, 30, 26, 41, 36, 50, 44, 18]
-        .map(
-          (h, i) =>
-            `<rect x="${12 + i * 13}" y="${74 - h}" width="10" height="${h}" class="${i === 10 ? "n2" : "n0"}"/>`,
-        )
-        .join("") +
-      `<line x1="8" y1="74.5" x2="156" y2="74.5" ${ink} class="axis"/>`,
-    "top-sources": () =>
-      [130, 104, 88, 70, 52, 40]
-        .map(
-          (w, i) =>
-            `<rect x="14" y="${8 + i * 11}" width="${w}" height="8" class="n0"/>`,
-        )
-        .join(""),
-    "top-authors": () =>
-      [120, 112, 90, 66, 60, 44]
-        .map(
-          (w, i) =>
-            `<rect x="14" y="${8 + i * 11}" width="${w}" height="8" class="n1"/>`,
-        )
-        .join(""),
-    composition: () => {
-      const donut = (cx, parts) => {
-        let a = -Math.PI / 2;
-        const r = 26;
-        return parts
-          .map((f, i) => {
-            const b = a + f * 2 * Math.PI;
-            const large = f > 0.5 ? 1 : 0;
-            const d = `M${cx + r * Math.cos(a)} ${40 + r * Math.sin(a)} A${r} ${r} 0 ${large} 1 ${cx + r * Math.cos(b)} ${40 + r * Math.sin(b)}`;
-            a = b;
-            return `<path d="${d}" class="arc a${i}"/>`;
-          })
-          .join("");
-      };
-      return donut(46, [0.5, 0.28, 0.22]) + donut(118, [0.36, 0.34, 0.3]);
-    },
-    set: () =>
-      [0, 1, 2, 3]
-        .map(
-          (i) =>
-            `<rect x="12" y="${8 + i * 17}" width="${96 - i * 12}" height="5" class="n0"/><rect x="12" y="${16 + i * 17}" width="44" height="3" class="muted"/><rect x="146" y="${8 + i * 17}" width="8" height="9" class="n2"/>`,
-        )
-        .join(""),
-  };
-  const fallback = {
-    network: drawings.coauthorship,
-    chart: drawings["top-sources"],
-    manage: drawings.set,
-  };
-  const draw = drawings[v.id] ?? fallback[v.kind];
-  return `<svg class="drawing" viewBox="0 0 164 80" aria-hidden="true" focusable="false">${draw()}</svg>`;
-}
-
 function renderSite() {
   const releases = parseChangelog(changelog);
   const rows = settingRows();
@@ -488,12 +425,16 @@ function renderSite() {
   const viewRows = views
     .map(
       (v) => `<article class="view" id="view-${esc(v.id)}">
-  ${viewDrawing(v)}
   <div class="view-text">
     <h3>${esc(v.label)}</h3>
+    <p class="question">${esc(v.question)}</p>
     <p class="summary">${esc(v.summary)}</p>
-    <ul>${v.details.map((d) => `<li>${esc(d)}</li>`).join("")}</ul>
   </div>
+  <figure class="shot">${picture(v.image, `${v.label} view: ${v.summary}`, "images", ' loading="lazy"')}</figure>
+  <details class="how">
+    <summary>How to read it</summary>
+    <ul>${v.details.map((d) => `<li>${esc(d)}</li>`).join("")}</ul>
+  </details>
 </article>`,
     )
     .join("\n");
@@ -509,10 +450,14 @@ function renderSite() {
         `<tr><th scope="row">${esc(r.label)}</th><td>${esc(r.choices.join(", "))}</td><td>${esc(r.defLabel)}</td><td>${esc(r.text)}</td></tr>`,
     )
     .join("\n");
-  const install = content.install
+  const install = startSteps()
     .map(
       (s) =>
-        `<li>${esc(s).replace("the latest release", `<a href="${REPO}/releases/latest">the latest release</a>`)}</li>`,
+        `<li>${esc(s.text).replace("the latest release", `<a href="${REPO}/releases/latest">the latest release</a>`)}${
+          s.image
+            ? `<div class="step-shot">${picture(s.image, s.alt || "", "images", ' width="300"')}</div>`
+            : ""
+        }</li>`,
     )
     .join("\n");
   const changes = releases
@@ -547,7 +492,7 @@ function renderSite() {
     <a href="#views">Views</a>
     <a href="#panel">The panel</a>
     <a href="#settings">Settings</a>
-    <a href="#install">Install</a>
+    <a href="#install">Get started</a>
     <a href="#changes">Changes</a>
     <a href="${REPO}">GitHub</a>
   </nav>
@@ -567,6 +512,12 @@ function renderSite() {
   <figure class="hero-graph">
     <canvas id="graph" aria-label="An example co-authorship network made from mock data. You can drag the nodes." role="img"></canvas>
     <figcaption>An example co-authorship network (mock data). Drag a node.</figcaption>
+  </figure>
+</section>
+
+<section class="block in-zotero" aria-label="Screenshot">
+  <figure class="shot wide">${picture(content.hero.image, content.hero.alt, "images")}
+    <figcaption>${esc(content.hero.caption)}</figcaption>
   </figure>
 </section>
 
@@ -602,7 +553,7 @@ ${settings}
 </section>
 
 <section id="install" class="block">
-  <h2>Install</h2>
+  <h2>Get started</h2>
   <ol class="steps">
 ${install}
   </ol>
@@ -655,6 +606,13 @@ if (CHECK) {
     ["addon/content/icons/icon-small.svg", "icon-small.svg"],
   ])
     fs.copyFileSync(path.join(ROOT, from), path.join(out, to));
+  fs.mkdirSync(path.join(out, "images"));
+  for (const f of fs.readdirSync(path.join(ROOT, IMAGE_DIR)))
+    if (f.endsWith(".png"))
+      fs.copyFileSync(
+        path.join(ROOT, IMAGE_DIR, f),
+        path.join(out, "images", f),
+      );
   fs.writeFileSync(path.join(out, ".nojekyll"), "");
 }
 

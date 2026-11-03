@@ -149,13 +149,45 @@ function makeAuthorResolver(
   const givenByBase = new Map<string, Map<string, number>>();
   const spellingByKey = new Map<string, Map<string, number>>();
 
+  // Compound surnames are written in many ways ("Siqueira De Cerqueira,
+  // José Antonio", "Cerqueira, Jose Antonio Siqueira De", "De Cerqueira, José
+  // Siqueira"), which give different base keys for one person. Compare the
+  // name words instead, ignoring particles (de, da, van, von, ...):
+  // - spellings with the same words (3 or more, none an initial) are one
+  //   person;
+  // - a spelling whose words all appear in exactly one longer spelling joins
+  //   it (the same rule as initials joining a unique full name); when several
+  //   longer spellings contain it, it stays apart.
+  // Two-word names are left alone, so "Lee, Kim" and "Kim, Lee" stay two.
+  const wordsOf = (c: { firstName?: string; lastName?: string }) => {
+    const words = foldName(`${c.lastName || ""} ${c.firstName || ""}`)
+      .split(/[\s-]+/)
+      .filter((w) => w && !NAME_PARTICLES.has(w));
+    if (words.length < 3 || words.some((w) => w.length < 2)) return "";
+    return Array.from(new Set(words)).sort().join(" ");
+  };
+  const basesByWords = new Map<string, Map<string, number>>();
+  for (const rec of records) {
+    for (const c of rec.creators || []) {
+      const k = creatorToKey(c);
+      const w = k && !k.key.startsWith("n:") ? wordsOf(c) : "";
+      if (!w) continue;
+      let m = basesByWords.get(w);
+      if (!m) basesByWords.set(w, (m = new Map()));
+      m.set(k!.key, (m.get(k!.key) || 0) + 1);
+    }
+  }
+  const joinedBase = joinNameForms(basesByWords);
+
   const baseOf = (c: {
     firstName?: string;
     lastName?: string;
     name?: string;
   }) => {
     const k = creatorToKey(c);
-    return k ? k.key : null;
+    if (!k) return null;
+    if (k.key.startsWith("n:") || !joinedBase.size) return k.key;
+    return joinedBase.get(wordsOf(c)) ?? k.key;
   };
   for (const rec of records) {
     for (const c of rec.creators || []) {
@@ -177,13 +209,14 @@ function makeAuthorResolver(
     const k = creatorToKey(c);
     if (!k) return null;
     if (k.key.startsWith("n:")) return k;
-    const given = givenByBase.get(k.key);
+    const base = baseOf(c)!;
+    const given = givenByBase.get(base);
     const g = fullGiven(c.firstName || "");
-    let key = k.key;
+    let key = base;
     if (given && given.size > 1) {
       // Several people share this surname+initial: keep full names apart and
       // leave ambiguous initials-only forms under the base key.
-      if (g) key = `${k.key}|${g}`;
+      if (g) key = `${base}|${g}`;
     }
     return { key, label: k.label };
   };
@@ -268,7 +301,7 @@ function addAuthorEdge(
   if (a === b) return;
   const lo = a < b ? a : b;
   const hi = a < b ? b : a;
-  const k = `${lo} ${hi}`;
+  const k = `${lo}\u0000${hi}`;
   const existing = map.get(k);
   if (existing) {
     existing.weight += weight;
@@ -757,13 +790,93 @@ function safeLabel<T>(
 }
 
 /** Append `value` to the list at `key`, creating the list on first use. */
-function pushTo<K>(map: Map<K, number[]>, key: K, value: number): void {
+function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
   if (list) list.push(value);
   else map.set(key, [value]);
 }
 
 /** The most frequent key of a tally (first seen wins ties). */
+/** Name particles ignored when comparing compound names. */
+const NAME_PARTICLES = new Set([
+  "de",
+  "da",
+  "das",
+  "do",
+  "dos",
+  "di",
+  "del",
+  "della",
+  "der",
+  "den",
+  "van",
+  "von",
+  "la",
+  "le",
+  "du",
+  "e",
+  "y",
+  "bin",
+  "al",
+]);
+
+/**
+ * Group name-word sets that belong to one person (see makeAuthorResolver) and
+ * map each word set to the base key used for the whole group: the base key
+ * seen most often across its spellings.
+ */
+function joinNameForms(
+  basesByWords: Map<string, Map<string, number>>,
+): Map<string, string> {
+  const keys = Array.from(basesByWords.keys());
+  const sets = new Map(keys.map((k) => [k, new Set(k.split(" "))]));
+  const parent = new Map(keys.map((k) => [k, k]));
+  const find = (k: string): string => {
+    let r = k;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    return r;
+  };
+  // Index by word so only spellings sharing a word are compared.
+  const byWord = new Map<string, string[]>();
+  for (const k of keys) for (const w of sets.get(k)!) pushTo(byWord, w, k);
+  for (const k of keys) {
+    const mine = sets.get(k)!;
+    const first = Array.from(mine).sort(
+      (a, b) => byWord.get(a)!.length - byWord.get(b)!.length,
+    )[0]!;
+    const supersets = byWord
+      .get(first)!
+      .filter((o) => o !== k && sets.get(o)!.size > mine.size)
+      .filter((o) => Array.from(mine).every((w) => sets.get(o)!.has(w)));
+    if (!supersets.length) continue;
+    // Join only when the longer spellings are one chain (each contained in
+    // the longest), i.e. they describe one person.
+    const longest = supersets.reduce((a, b) =>
+      sets.get(a)!.size >= sets.get(b)!.size ? a : b,
+    );
+    const L = sets.get(longest)!;
+    if (
+      !supersets.every((o) => Array.from(sets.get(o)!).every((w) => L.has(w)))
+    )
+      continue;
+    parent.set(find(k), find(longest));
+  }
+  const tallyByRoot = new Map<string, Map<string, number>>();
+  for (const k of keys) {
+    const root = find(k);
+    let t = tallyByRoot.get(root);
+    if (!t) tallyByRoot.set(root, (t = new Map()));
+    for (const [base, n] of basesByWords.get(k)!)
+      t.set(base, (t.get(base) || 0) + n);
+  }
+  const out = new Map<string, string>();
+  for (const k of keys) {
+    const t = tallyByRoot.get(find(k))!;
+    if (t.size > 1) out.set(k, mostFrequent(t));
+  }
+  return out;
+}
+
 function mostFrequent(tally: Map<string, number>): string {
   let best = "";
   let bestN = -1;

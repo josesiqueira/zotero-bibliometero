@@ -2,13 +2,13 @@ name: pages
 
 # Builds the documentation website from the same sources as the README
 # (scripts/docs.mjs) and deploys it to GitHub Pages. Runs on every push to
-# master, so the site always matches the code on master.
+# master, so the site always matches the code on master. A release needs no
+# separate run: its commit is pushed to master first, and the Pages
+# environment only accepts deployments from master (not from tags).
 
 on:
   push:
     branches: [master]
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:

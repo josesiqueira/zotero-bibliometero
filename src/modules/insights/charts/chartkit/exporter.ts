@@ -1,58 +1,7 @@
 /**
- * chartkit/exporter.ts - SVG serialization + SVG->PNG rasterization.
- *
- * Charts set their colours as concrete attribute values pulled from ThemeInfo
- * (never CSS vars), so serialization is mostly: clone, guarantee xmlns/viewBox,
- * prepend an opaque background rect (so transparent areas are not black in the
- * PNG and the SVG opens cleanly outside Zotero), and emit a standalone string.
+ * chartkit/exporter.ts - SVG -> PNG rasterization for exported figures
+ * (see figure.ts, which builds and serializes the SVG).
  */
-
-import { SVG_NS } from "./svg";
-import type { ThemeInfo } from "../../types";
-
-/**
- * Clone `svg`, inline the theme background as a full-bleed rect, ensure the
- * standalone attributes are present, and return XML text. Width/height are read
- * from the live element (clientWidth) or the viewBox as a fallback.
- */
-export function serializeSVG(svg: SVGSVGElement, theme: ThemeInfo): string {
-  const doc = svg.ownerDocument as Document;
-  const { w, h } = svgPixelSize(svg);
-  const clone = svg.cloneNode(true) as SVGSVGElement;
-  clone.setAttribute("xmlns", SVG_NS);
-  clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
-  clone.setAttribute("width", String(w));
-  clone.setAttribute("height", String(h));
-  if (!clone.getAttribute("viewBox")) {
-    clone.setAttribute("viewBox", `0 0 ${w} ${h}`);
-  }
-  // Opaque background as the first child so it sits behind everything.
-  const bg = doc.createElementNS(SVG_NS, "rect");
-  bg.setAttribute("x", "0");
-  bg.setAttribute("y", "0");
-  bg.setAttribute("width", String(w));
-  bg.setAttribute("height", String(h));
-  bg.setAttribute("fill", theme.bg);
-  clone.insertBefore(bg, clone.firstChild);
-
-  const serializer = new (doc.defaultView as any).XMLSerializer();
-  const body = serializer.serializeToString(clone);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n${body}`;
-}
-
-/** Determine the chart's pixel size from the element or its viewBox. */
-function svgPixelSize(svg: SVGSVGElement): { w: number; h: number } {
-  let w = svg.clientWidth || 0;
-  let h = svg.clientHeight || 0;
-  if ((!w || !h) && svg.getAttribute("viewBox")) {
-    const parts = svg.getAttribute("viewBox")!.split(/\s+/).map(Number);
-    if (parts.length === 4) {
-      w = w || parts[2];
-      h = h || parts[3];
-    }
-  }
-  return { w: Math.max(1, Math.round(w)), h: Math.max(1, Math.round(h)) };
-}
 
 /**
  * Rasterize a serialized SVG string to a PNG Blob via an offscreen canvas at
@@ -110,7 +59,8 @@ export function svgToPng(
       }
     };
     img.onerror = () => {
-      if (!settled) reject(new Error("SVG image failed to load for PNG export"));
+      if (!settled)
+        reject(new Error("SVG image failed to load for PNG export"));
       cleanup();
     };
     img.src = url;

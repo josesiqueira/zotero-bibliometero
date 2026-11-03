@@ -1,10 +1,16 @@
 /**
  * scene.ts - Backend-neutral scene description for the network renderer.
  *
- * `drawScene(model, view, style, backend)` walks edges -> nodes -> labels and
- * emits primitives (line / circle / ring / text) to a Backend. The SAME walk
- * drives the live canvas, the PNG export (CanvasBackend) and the SVG export
- * (SvgBackend), so they can never diverge.
+ * `drawScene(model, view, style, state, backend)` walks edges -> nodes ->
+ * labels and emits primitives (line / circle / ring / text) to a Backend. The
+ * SAME walk drives the live canvas and the exported figure (SvgBackend; the PNG
+ * is rasterized from that SVG), so they can never diverge.
+ *
+ * Readability rules, following VOSviewer: node size grows with items, colour
+ * shows the research group (or a fixed colour such as a paper's year), line
+ * width grows with shared items, and labels are placed biggest node first and
+ * skipped wherever they would overlap a label already placed. Sizes of lines,
+ * outlines and text are in screen pixels, so they stay readable at any zoom.
  *
  * No Zotero references; dependency-free.
  */
@@ -24,9 +30,14 @@ export interface SceneStyle {
   edgeDim: string;
   label: string;
   labelDim: string;
+  labelHalo: string;
   selectionRing: string;
   hoverGlow: string;
-  /** Fill per NodeKind. */
+  /** Group colours, in group order (0 = largest group). */
+  groups: string[];
+  /** Fill for nodes outside any coloured group. */
+  neutral: string;
+  /** Fill per NodeKind when a node has no group or colour. */
   kindColors: { item: string; author: string; tag: string };
   /** Dimmed fill used when a selection/highlight exists. */
   nodeDim: string;
@@ -38,40 +49,66 @@ export interface SceneBackend {
   background(color: string, cssW: number, cssH: number): void;
   /** Begin drawing in world space (pan/zoom applied by the backend). */
   beginWorld(view: ViewTransform): void;
-  line(x1: number, y1: number, x2: number, y2: number, color: string, width: number): void;
+  line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: string,
+    width: number,
+  ): void;
   circle(x: number, y: number, r: number, fill: string): void;
   ring(x: number, y: number, r: number, color: string, width: number): void;
-  text(x: number, y: number, text: string, color: string, fontPx: number): void;
+  /** Centered label with its top at y; `halo` is an outline for legibility. */
+  text(
+    x: number,
+    y: number,
+    text: string,
+    color: string,
+    fontPx: number,
+    halo?: string,
+  ): void;
   /** End world drawing. */
   endWorld(): void;
 }
 
-/** Minimum scale at which labels are drawn (avoids clutter when zoomed out). */
-const LABEL_SCALE_THRESHOLD = 0.7;
-const BASE_RADIUS = 4;
-const RADIUS_K = 2.2;
+const LABEL_MAX_CHARS = 26;
 
-/** Node radius from its weight: 4 + 2.2 * sqrt(weight). */
+/**
+ * Node radius in SCREEN pixels from its weight (3.5 to 18 px). Sizes are fixed
+ * on screen, as in VOSviewer, so zooming in spreads nodes apart instead of
+ * inflating them into overlapping discs.
+ */
 export function nodeRadius(n: NetNode): number {
-  return BASE_RADIUS + RADIUS_K * Math.sqrt(Math.max(0, n.weight));
+  return Math.min(18, 3.5 + 2.4 * Math.sqrt(Math.max(0, n.weight)));
 }
 
 /** Build a concrete drawing style from the theme palette. */
 export function styleFromTheme(theme: ThemeInfo): SceneStyle {
-  const series = theme.series && theme.series.length ? theme.series : [theme.accent];
-  const pick = (i: number) => series[i % series.length] || theme.accent;
+  const series =
+    theme.series && theme.series.length ? theme.series : [theme.accent];
   const dark = theme.mode === "dark";
+  // Yellow is hard to see on a light background; keep it last.
+  const groups = series.filter((c) => c.toLowerCase() !== "#999999");
+  const yellow = groups.findIndex((c) => c.toLowerCase() === "#f0e442");
+  if (yellow >= 0) groups.push(...groups.splice(yellow, 1));
   return {
     bg: theme.bg,
-    edge: dark ? "rgba(200,205,215,0.30)" : "rgba(80,80,90,0.35)",
-    edgeDim: dark ? "rgba(200,205,215,0.07)" : "rgba(80,80,90,0.08)",
+    edge: dark ? "rgba(200,205,215,0.28)" : "rgba(70,70,85,0.28)",
+    edgeDim: dark ? "rgba(200,205,215,0.06)" : "rgba(70,70,85,0.06)",
     label: theme.fg,
     labelDim: theme.muted,
-    selectionRing: theme.accent,
-    hoverGlow: dark ? "rgba(138,180,248,0.40)" : "rgba(26,115,232,0.35)",
-    // item / author / tag distinguished via the categorical series.
-    kindColors: { item: pick(0), author: pick(1), tag: pick(2) },
-    nodeDim: theme.muted,
+    labelHalo: theme.bg,
+    selectionRing: theme.fg,
+    hoverGlow: dark ? "rgba(138,180,248,0.40)" : "rgba(26,115,232,0.30)",
+    groups,
+    neutral: dark ? "#6f737b" : "#a3a6ad",
+    kindColors: {
+      item: groups[0] || theme.accent,
+      author: groups[1] || theme.accent,
+      tag: groups[2] || theme.accent,
+    },
+    nodeDim: dark ? "#3a3d44" : "#d9dadd",
   };
 }
 
@@ -80,14 +117,20 @@ export interface SceneState {
   highlight: Set<string>;
   /** Currently hovered node id, or null. */
   hover: string | null;
-  /** Draw node labels (suppressed when zoomed far out). */
+  /** Draw node labels. */
   showLabels: boolean;
   /** CSS pixel viewport size (for the background fill). */
   cssW: number;
   cssH: number;
 }
 
-function nodeColor(style: SceneStyle, n: NetNode): string {
+export function nodeColor(style: SceneStyle, n: NetNode): string {
+  if (n.color) return n.color;
+  if (typeof n.group === "number") {
+    return n.group >= 0
+      ? style.groups[n.group % style.groups.length] || style.neutral
+      : style.neutral;
+  }
   return style.kindColors[n.kind] || style.kindColors.item;
 }
 
@@ -97,8 +140,8 @@ function truncate(s: string, max: number): string {
 }
 
 /**
- * Walk the model and emit primitives to the backend. Identical for live canvas,
- * PNG, and SVG so the three outputs always agree.
+ * Walk the model and emit primitives to the backend. Identical for the live
+ * canvas and the exported figure.
  */
 export function drawScene(
   model: NetModel,
@@ -109,59 +152,122 @@ export function drawScene(
 ): void {
   backend.background(style.bg, state.cssW, state.cssH);
   backend.beginWorld(view);
+  const px = 1 / view.scale; // one screen pixel in world units
 
   const hasHi = state.highlight.size > 0;
   const byId = new Map<string, NetNode>();
   for (const n of model.nodes) byId.set(n.id, n);
 
-  // --- Edges ---
+  // --- Edges: width grows with shared items (screen px). ---
   for (const e of model.edges) {
     const s = byId.get(e.source);
     const t = byId.get(e.target);
     if (!s || !t) continue;
-    const incident = !hasHi || state.highlight.has(e.source) || state.highlight.has(e.target);
-    const color = incident ? style.edge : style.edgeDim;
-    const width =
-      ((incident ? 1 : 0.5) * (0.6 + Math.min(3, Math.log2(1 + e.weight)))) /
-      view.scale;
-    backend.line(s.x, s.y, t.x, t.y, color, width);
+    const incident =
+      !hasHi ||
+      (state.highlight.has(e.source) && state.highlight.has(e.target));
+    const width = (0.7 + Math.min(3.5, 1.1 * Math.log2(1 + e.weight))) * px;
+    backend.line(
+      s.x,
+      s.y,
+      t.x,
+      t.y,
+      incident ? style.edge : style.edgeDim,
+      width,
+    );
   }
 
-  // --- Nodes ---
-  for (const n of model.nodes) {
-    const r = nodeRadius(n);
+  // --- Nodes, small first so big ones sit on top. ---
+  const ordered = model.nodes.slice().sort((a, b) => a.weight - b.weight);
+  for (const n of ordered) {
+    const r = nodeRadius(n) * px;
     const isHi = state.highlight.has(n.id);
-    const isHover = state.hover === n.id;
     const dim = hasHi && !isHi;
-
-    if (isHover) {
-      backend.circle(n.x, n.y, r + 5 / view.scale, style.hoverGlow);
-    }
+    if (state.hover === n.id)
+      backend.circle(n.x, n.y, r + 5 * px, style.hoverGlow);
     backend.circle(n.x, n.y, r, dim ? style.nodeDim : nodeColor(style, n));
-    if (isHi) {
-      backend.ring(n.x, n.y, r + 2.5 / view.scale, style.selectionRing, 2 / view.scale);
+    backend.ring(n.x, n.y, r, style.bg, 1.2 * px);
+    if (
+      isHi &&
+      hasHi &&
+      state.highlight.size > 1 &&
+      n.id === firstOf(state.highlight)
+    ) {
+      backend.ring(n.x, n.y, r + 2.5 * px, style.selectionRing, 2 * px);
     }
   }
 
-  // --- Labels ---
-  if (state.showLabels && view.scale >= LABEL_SCALE_THRESHOLD) {
-    const fontPx = 11 / view.scale;
-    for (const n of model.nodes) {
-      const dim = hasHi && !state.highlight.has(n.id);
-      // With a highlight active, only label highlighted/hovered nodes.
-      if (hasHi && dim && state.hover !== n.id) continue;
-      const r = nodeRadius(n);
-      const color = dim ? style.labelDim : style.label;
-      backend.text(n.x, n.y + r + 2 / view.scale, truncate(n.label, 28), color, fontPx);
+  // --- Labels: biggest first, skip any that would overlap (screen space). ---
+  if (!state.showLabels) {
+    backend.endWorld();
+    return;
+  }
+  const placed: Array<[number, number, number, number]> = [];
+  const overlaps = (b: [number, number, number, number]) =>
+    placed.some(
+      (p) => b[0] < p[2] && b[2] > p[0] && b[1] < p[3] && b[3] > p[1],
+    );
+  const maxW = model.nodes.reduce((m, n) => Math.max(m, n.weight), 1);
+  const wanted = (n: NetNode) =>
+    n.id === state.hover ? 3 : hasHi ? (state.highlight.has(n.id) ? 2 : -1) : 1;
+  const order = model.nodes
+    .filter((n) => wanted(n) > 0)
+    .sort(
+      (a, b) =>
+        wanted(b) - wanted(a) ||
+        b.weight - a.weight ||
+        (a.label < b.label ? -1 : 1),
+    );
+  for (const n of order) {
+    const r = nodeRadius(n) * px;
+    const fontPx = 10.5 + 3.5 * Math.sqrt(n.weight / maxW); // 10.5 to 14 screen px
+    const text = truncate(n.label, LABEL_MAX_CHARS);
+    const sx = n.x * view.scale + view.tx;
+    const sy = n.y * view.scale + view.ty + r * view.scale + 2;
+    const halfW = (text.length * fontPx * 0.56) / 2;
+    const box: [number, number, number, number] = [
+      sx - halfW - 2,
+      sy - 1,
+      sx + halfW + 2,
+      sy + fontPx + 1,
+    ];
+    const forced = n.id === state.hover;
+    if (!forced) {
+      if (
+        box[2] < 0 ||
+        box[0] > state.cssW ||
+        box[3] < 0 ||
+        box[1] > state.cssH
+      )
+        continue;
+      if (overlaps(box)) continue;
     }
+    placed.push(box);
+    const color =
+      hasHi && !state.highlight.has(n.id) ? style.labelDim : style.label;
+    backend.text(
+      n.x,
+      n.y + r + 2 * px,
+      text,
+      color,
+      fontPx * px,
+      style.labelHalo,
+    );
   }
 
   backend.endWorld();
 }
 
+function firstOf(set: Set<string>): string | undefined {
+  for (const v of set) return v;
+  return undefined;
+}
+
 /* ----------------------------------------------------------------------------
  * CanvasBackend - draws to a CanvasRenderingContext2D.
  * ------------------------------------------------------------------------- */
+
+const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
 export class CanvasBackend implements SceneBackend {
   private ctx: CanvasRenderingContext2D;
@@ -187,9 +293,17 @@ export class CanvasBackend implements SceneBackend {
     ctx.scale(view.scale, view.scale);
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
+    ctx.lineJoin = "round";
   }
 
-  line(x1: number, y1: number, x2: number, y2: number, color: string, width: number): void {
+  line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: string,
+    width: number,
+  ): void {
     const ctx = this.ctx;
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
@@ -216,9 +330,21 @@ export class CanvasBackend implements SceneBackend {
     ctx.stroke();
   }
 
-  text(x: number, y: number, text: string, color: string, fontPx: number): void {
+  text(
+    x: number,
+    y: number,
+    text: string,
+    color: string,
+    fontPx: number,
+    halo?: string,
+  ): void {
     const ctx = this.ctx;
-    ctx.font = `${fontPx}px sans-serif`;
+    ctx.font = `${fontPx}px ${FONT}`;
+    if (halo) {
+      ctx.strokeStyle = halo;
+      ctx.lineWidth = fontPx * 0.28;
+      ctx.strokeText(text, x, y);
+    }
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
   }
@@ -229,41 +355,34 @@ export class CanvasBackend implements SceneBackend {
 }
 
 /* ----------------------------------------------------------------------------
- * SvgBackend - accumulates primitives into one <svg> string.
- *
- * World coordinates are emitted directly; the SVG viewBox is set to the fit
- * bounds so the whole graph is visible without needing the live view transform.
+ * SvgBackend - accumulates primitives as SVG markup inside a transformed group,
+ * for the exported figure (see NetworkView.exportAs).
  * ------------------------------------------------------------------------- */
-
-export interface SvgBounds {
-  minX: number;
-  minY: number;
-  width: number;
-  height: number;
-}
 
 export class SvgBackend implements SceneBackend {
   private parts: string[] = [];
-  private bg = "#ffffff";
-  private bounds: SvgBounds;
 
-  constructor(bounds: SvgBounds) {
-    this.bounds = bounds;
+  background(): void {
+    /* the figure draws its own background */
   }
 
-  background(color: string): void {
-    this.bg = color;
+  beginWorld(view: ViewTransform): void {
+    this.parts.push(
+      `<g transform="translate(${f(view.tx)} ${f(view.ty)}) scale(${f(view.scale)})">`,
+    );
   }
 
-  // The SVG uses an absolute viewBox; pan/zoom from the live view is ignored.
-  beginWorld(): void {
-    /* no-op: world coords are emitted directly */
-  }
-
-  line(x1: number, y1: number, x2: number, y2: number, color: string, width: number): void {
+  line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: string,
+    width: number,
+  ): void {
     this.parts.push(
       `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" ` +
-        `stroke="${esc(color)}" stroke-width="${f(Math.max(0.1, width))}" />`,
+        `stroke="${esc(color)}" stroke-width="${f(Math.max(0.01, width))}" />`,
     );
   }
 
@@ -276,46 +395,43 @@ export class SvgBackend implements SceneBackend {
   ring(x: number, y: number, r: number, color: string, width: number): void {
     this.parts.push(
       `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="none" ` +
-        `stroke="${esc(color)}" stroke-width="${f(Math.max(0.1, width))}" />`,
+        `stroke="${esc(color)}" stroke-width="${f(Math.max(0.01, width))}" />`,
     );
   }
 
-  text(x: number, y: number, text: string, color: string, fontPx: number): void {
+  text(
+    x: number,
+    y: number,
+    text: string,
+    color: string,
+    fontPx: number,
+    halo?: string,
+  ): void {
+    const outline = halo
+      ? ` stroke="${esc(halo)}" stroke-width="${f(fontPx * 0.28)}" paint-order="stroke" stroke-linejoin="round"`
+      : "";
     this.parts.push(
-      `<text x="${f(x)}" y="${f(y)}" fill="${esc(color)}" ` +
-        `font-family="sans-serif" font-size="${f(fontPx)}" ` +
-        `text-anchor="middle" dominant-baseline="hanging">${esc(text)}</text>`,
+      `<text x="${f(x)}" y="${f(y)}" fill="${esc(color)}" font-size="${f(fontPx)}" ` +
+        `text-anchor="middle" dominant-baseline="hanging"${outline}>${esc(text)}</text>`,
     );
   }
 
   endWorld(): void {
-    /* no-op */
+    this.parts.push("</g>");
   }
 
-  /** Serialize the accumulated primitives into one standalone SVG document. */
-  serialize(): string {
-    const b = this.bounds;
-    const w = Math.max(1, b.width);
-    const h = Math.max(1, b.height);
-    return (
-      `<?xml version="1.0" encoding="UTF-8"?>\n` +
-      `<svg xmlns="http://www.w3.org/2000/svg" ` +
-      `viewBox="${f(b.minX)} ${f(b.minY)} ${f(w)} ${f(h)}" ` +
-      `width="${f(w)}" height="${f(h)}">\n` +
-      `<rect x="${f(b.minX)}" y="${f(b.minY)}" width="${f(w)}" height="${f(h)}" ` +
-      `fill="${esc(this.bg)}" />\n` +
-      this.parts.join("\n") +
-      `\n</svg>\n`
-    );
+  /** The accumulated markup (one transformed <g>). */
+  markup(): string {
+    return this.parts.join("\n");
   }
 }
 
 function f(n: number): string {
   if (!isFinite(n)) return "0";
-  return (Math.round(n * 100) / 100).toString();
+  return (Math.round(n * 1000) / 1000).toString();
 }
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

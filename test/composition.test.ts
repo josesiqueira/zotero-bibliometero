@@ -33,11 +33,7 @@ const collName = (id: number) => "C" + id;
 describe("buildComposition", function () {
   it("counts items by type (ranked desc)", function () {
     const data = buildComposition(
-      [
-        rec("journalArticle", []),
-        rec("journalArticle", []),
-        rec("book", []),
-      ],
+      [rec("journalArticle", []), rec("journalArticle", []), rec("book", [])],
       typeLabel,
       collName,
     );
@@ -48,7 +44,11 @@ describe("buildComposition", function () {
         ["book", 1],
       ],
     );
-    assert.strictEqual(data.byType[0].label, "journalArticle", "label via stub");
+    assert.strictEqual(
+      data.byType[0].label,
+      "journalArticle",
+      "label via stub",
+    );
     assert.strictEqual(data.total, 3);
   });
 

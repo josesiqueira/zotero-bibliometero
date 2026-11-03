@@ -5,81 +5,87 @@
       "id": "coauthorship",
       "label": "Co-authorship",
       "kind": "network",
-      "tooltip": "Co-authorship network: each dot is an author, a line links authors who share a paper. Bigger dots wrote more.",
-      "summary": "Authors as nodes, with a line between two authors who share a paper. Bigger nodes wrote more of your items.",
+      "tooltip": "Which research groups recur in your reading: authors with several items, linked when they share an item, coloured by group. Click an author to see their co-authors.",
+      "summary": "The research groups in your reading: authors who appear on several of your items, linked when they wrote together, coloured by group.",
       "details": [
-        "Built from the creators field of every regular item, so it is correct for the whole library.",
-        "Large libraries keep the 400 authors with the most items, so the view stays smooth.",
-        "Drag a node to pin it, pan the canvas, and zoom with the mouse wheel.",
-        "Re-layout, Fit and Release pins buttons in the header."
+        "Shows authors with at least 2 items (raised automatically, for example to 3+, so the map stays readable). Authors with a single item, or no co-author on the map, are left out; Top authors still counts them.",
+        "Groups are found with the Louvain method, as in VOSviewer and bibliometrix, and named after their member with the most items. The legend lists them.",
+        "Node size shows items, line width shows shared items. Labels are drawn biggest first and skipped where they would overlap.",
+        "Click an author to highlight their co-authors and list them in the status line; double-click to select their items in your library.",
+        "Items with more than 25 authors count toward each author but add no links, so large consortium papers do not swamp the map.",
+        "Drag a node to pin it, pan the map, zoom with the mouse wheel. Fit, Re-layout and Release pins are in the header."
       ]
     },
     {
       "id": "author-paper",
       "label": "Author / paper",
       "kind": "network",
-      "tooltip": "Your papers and their authors, linked by who wrote what. Best on a Curated set; the whole library is capped to the most co-authored papers.",
-      "summary": "A two-sided network of your papers and their authors: who wrote what.",
+      "tooltip": "Which of your items come from the same people: repeat authors and the items they link, items coloured by year. Click an item to select it.",
+      "summary": "Which of your items come from the same people: authors who appear on several items, joined to those items.",
       "details": [
-        "Click a paper node to open that paper in your library.",
-        "Works best on a curated set. On the whole library it keeps the most co-authored papers, up to 400 nodes.",
-        "Same drag, pan, zoom and pin controls as the co-authorship network."
+        "Shows repeat authors (2+ items, raised automatically on big libraries) and the items they wrote; items without a repeat author are left out and counted in the status line.",
+        "Items are labelled by first author and year and coloured by publication year; the full title is in the tooltip.",
+        "Click an item to select it in your library, double-click to open it. Click an author to highlight their items, double-click to select them.",
+        "On a curated set every author is shown, so you can see exactly who connects the items you picked."
       ]
     },
     {
       "id": "pubs-per-year",
       "label": "Publications / year",
       "kind": "chart",
-      "tooltip": "How many items you have per publication year. Click a bar to find that year's items in your library.",
-      "summary": "A histogram of your items per publication year, with a separate bar for undated items.",
+      "tooltip": "How many of your items were published each year. Click a bar to select those items.",
+      "summary": "Your items per publication year, with every year in the range shown and a separate bar for items with no date.",
       "details": [
-        "Hover a bar for the exact count.",
-        "Click a bar to search your library for that year's items."
+        "The current year is drawn lighter and marked as still in progress, so a short bar is not read as a decline.",
+        "Hover a bar for the count; click it to select exactly those items in your library."
       ]
     },
     {
       "id": "top-sources",
       "label": "Top sources",
       "kind": "chart",
-      "tooltip": "The journals and conferences that appear most in this set. Click one to find its items in your library.",
-      "summary": "A ranked bar chart of the journals and conferences that appear most often.",
+      "tooltip": "The journals, proceedings and series that hold the most of your items. Click a bar to select those items.",
+      "summary": "A ranked bar chart of the journals, conference proceedings, book series and repositories that hold the most of your items.",
       "details": [
-        "Choose how many sources to show with the Top-N box in the header.",
-        "Click a bar to search your library for that source."
+        "A book's publisher, a thesis' university or a report's institution is not a source; those items count as having no source unless they belong to a series.",
+        "Spelling variants (case, accents, punctuation, & and \"and\") are counted as one source.",
+        "Choose how many to show with the Show top box; click a bar to select exactly those items."
       ]
     },
     {
       "id": "top-authors",
       "label": "Top authors",
       "kind": "chart",
-      "tooltip": "Authors ranked by how many of your items they wrote. Click one to find their items in your library.",
+      "tooltip": "Authors ranked by how many of your items they wrote. Click one to select their items.",
       "summary": "A ranked bar chart of authors by the number of your items they wrote.",
       "details": [
-        "Choose how many authors to show with the Top-N box in the header.",
-        "Click a bar to search your library for that author."
+        "Counts authors only (the item type's main creator role); editors are used only for items with no authors.",
+        "Name variants are joined: accents and case are ignored, and an initials-only form (Floridi, L.) joins the full name (Floridi, Luciano) when only one person matches. Different full names that share an initial stay apart.",
+        "Choose how many to show with the Show top box; click a bar to select exactly those items."
       ]
     },
     {
       "id": "composition",
       "label": "Composition",
       "kind": "chart",
-      "tooltip": "A breakdown of your items by type and by collection. Click a slice to see those items.",
-      "summary": "Two donut charts: your items by item type and by collection.",
+      "tooltip": "Your items by type, and how they are filed in your top-level collections. Click a slice or bar to select those items.",
+      "summary": "A donut of your items by item type, and bars for your top-level collections (subcollections included).",
       "details": [
-        "Hover a slice for its count and percentage.",
-        "Click an item-type slice to select those items, or a collection slice to open that collection."
+        "Item types beyond the six largest are grouped as Other types.",
+        "Collections are bars, not slices, because an item can be in several collections. Unfiled shows items in no collection.",
+        "Click a slice to select those items; click a collection bar to open the collection."
       ]
     },
     {
       "id": "set",
-      "label": "Set",
+      "label": "Curated set",
       "kind": "manage",
-      "tooltip": "Manage the curated set, the specific papers Insights focuses on. Add papers by right-clicking them in the library.",
-      "summary": "The list of papers in your curated set, the specific papers Insights focuses on.",
+      "tooltip": "Your curated set: the hand-picked items Insights can focus on. Add items here or by right-clicking them in the library.",
+      "summary": "The items in your curated set, a hand-picked group that every view can focus on.",
       "details": [
-        "Each row shows the title, first author and year. Double-click a row to show the paper in your library.",
-        "Remove one paper with its trash button, or empty the set with Clear all.",
-        "Add current selection adds the items selected in the library."
+        "Each row shows the title, first author and year. Double-click a row to select the item in your library.",
+        "Remove one item with its trash button, or empty the set with Clear all (it asks first).",
+        "Add current selection adds the items selected in the item list."
       ]
     }
   ]

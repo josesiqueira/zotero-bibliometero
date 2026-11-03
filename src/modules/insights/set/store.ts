@@ -209,14 +209,23 @@ export const insightsSet: InsightsSetStore = {
     return set ? set.has(itemID) : false;
   },
 
+  // Items in the trash stay in the set (restoring them brings them back) but
+  // are not counted or listed, matching the charts, which skip trashed items.
   count(libraryID: number): number {
-    const set = ensureCache().get(libraryID);
-    return set ? set.size : 0;
+    return this.list(libraryID).length;
   },
 
   list(libraryID: number): number[] {
     const set = ensureCache().get(libraryID);
-    return set ? Array.from(set) : [];
+    if (!set) return [];
+    return Array.from(set).filter((id) => {
+      try {
+        const it = Zotero.Items.get(id) as any;
+        return !!it && !it.deleted;
+      } catch {
+        return false;
+      }
+    });
   },
 
   add(libraryID: number, itemIDs: number[]): void {

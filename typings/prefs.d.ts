@@ -7,14 +7,12 @@
 declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
-      "hub.lastView": string;
       "hub.defaultView": string;
       "hub.theme": string;
       "hub.topN": number;
       "hub.networkCap": number;
       "insights.source": string;
       "insights.dockHeight": number;
-      "insights.maximized": boolean;
     };
   }
 }

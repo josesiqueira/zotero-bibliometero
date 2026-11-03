@@ -26,6 +26,7 @@ Never hand-edit text between `<!-- docs:NAME:start -->` and
 
 ```bash
 npx tsc --noEmit
+npm run test:unit
 npm run build
 npm run docs:check
 ```

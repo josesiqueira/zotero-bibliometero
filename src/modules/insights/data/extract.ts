@@ -37,11 +37,13 @@ export interface ItemRecord {
    * creators carry `name` (fieldMode === 1) instead of first/last.
    */
   creators: Array<{ firstName?: string; lastName?: string; name?: string }>;
+  /** True when Zotero has this item in the trash. */
+  deleted?: boolean;
   /** Four-digit publication year, or null when unparseable / missing. */
   year: number | null;
   /** Container title for this item type (journal, proceedings, ...) or "". */
   source: string;
-  /** Collection ids this item belongs to (may be empty). */
+  /** Top-level collection ids this item is filed under (may be empty). */
   collections: number[];
 }
 
@@ -53,15 +55,19 @@ const SOURCE_FIELDS: Record<string, string[]> = {
   journalArticle: ["publicationTitle"],
   conferencePaper: ["proceedingsTitle", "conferenceName", "publicationTitle"],
   bookSection: ["bookTitle", "publicationTitle"],
-  book: ["publisher", "series"],
-  report: ["institution", "publisher"],
-  thesis: ["university", "publisher"],
+  // A source is where a work is published (journal, proceedings, series), as
+  // in Web of Science "Publication Titles" and Scopus "Source title". A book's
+  // publisher, a thesis' university or a report's institution is not one, so
+  // those count as "no source" unless the work belongs to a series.
+  book: ["series"],
+  report: ["seriesTitle"],
+  thesis: [],
   preprint: ["repository", "publicationTitle"],
   webpage: ["websiteTitle", "publicationTitle", "blogTitle"],
   blogPost: ["websiteTitle", "publicationTitle", "blogTitle"],
 };
 
-const DEFAULT_SOURCE_FIELDS = ["publicationTitle", "publisher"];
+const DEFAULT_SOURCE_FIELDS = ["publicationTitle"];
 
 /** Lowest / highest plausible publication years used when clamping. */
 const MIN_YEAR = 1500;
@@ -192,12 +198,22 @@ function extractCreators(
   } catch {
     json = [];
   }
+  // Count authors only, as bibliometric tools do (bibliometrix AU field,
+  // Scopus and Web of Science author analysis): the item type's primary
+  // creator role (author, presenter, director, ...). Editors, translators and
+  // series editors are used only when an item has no primary creators at all.
+  const primary = primaryCreatorType(item);
+  const isPrimary = (c: any) =>
+    !c.creatorType || c.creatorType === primary || c.creatorType === "author";
+  let chosen = json.filter((c) => c && isPrimary(c));
+  if (!chosen.length)
+    chosen = json.filter((c) => c && c.creatorType === "editor");
   const out: Array<{ firstName?: string; lastName?: string; name?: string }> =
     [];
-  for (const c of json) {
-    if (!c) continue;
+  for (const c of chosen) {
     const rec: { firstName?: string; lastName?: string; name?: string } = {};
-    if (typeof c.firstName === "string" && c.firstName) rec.firstName = c.firstName;
+    if (typeof c.firstName === "string" && c.firstName)
+      rec.firstName = c.firstName;
     if (typeof c.lastName === "string" && c.lastName) rec.lastName = c.lastName;
     if (typeof c.name === "string" && c.name) rec.name = c.name;
     // Skip wholly empty creators (no usable name component).
@@ -207,17 +223,52 @@ function extractCreators(
   return out;
 }
 
-/** Read the collection ids this item belongs to (empty on failure). */
+/** Name of the item type's primary creator type ("author" for most types). */
+function primaryCreatorType(item: Zotero.Item): string {
+  try {
+    const ct = (Zotero as any).CreatorTypes;
+    const id = ct.getPrimaryIDForType((item as any).itemTypeID);
+    const name = id ? ct.getName(id) : "";
+    if (name) return String(name);
+  } catch {
+    /* ignore */
+  }
+  return "author";
+}
+
+/**
+ * Top-level collections this item is filed under, directly or through any
+ * subcollection (each counted once), so the Composition view matches the
+ * collection tree a user sees on the left. Empty when unfiled.
+ */
 function extractCollections(item: Zotero.Item): number[] {
+  const out = new Set<number>();
   try {
     const cols = (item as any).getCollections?.();
     if (Array.isArray(cols)) {
-      return cols.map((c) => Number(c)).filter((n) => Number.isFinite(n));
+      for (const c of cols) {
+        const top = topLevelCollection(Number(c));
+        if (top !== null) out.add(top);
+      }
     }
   } catch {
     /* ignore */
   }
-  return [];
+  return Array.from(out);
+}
+
+/** Walk up to the top-level ancestor of a collection (null if unknown). */
+function topLevelCollection(id: number): number | null {
+  if (!Number.isFinite(id)) return null;
+  try {
+    let col = (Zotero as any).Collections.get(id);
+    for (let guard = 0; col && col.parentID && guard < 64; guard++) {
+      col = (Zotero as any).Collections.get(col.parentID);
+    }
+    return col ? Number(col.id) : id;
+  } catch {
+    return id;
+  }
 }
 
 /**
@@ -257,6 +308,8 @@ function isUsableItem(it: any): boolean {
     if (!it || typeof it.isRegularItem !== "function") return false;
     if (!it.isRegularItem()) return false;
     if (typeof it.isFeedItem === "function" && it.isFeedItem()) return false;
+    // Trashed items stay in Zotero until the trash is emptied; never count them.
+    if (it.deleted) return false;
     return true;
   } catch {
     return false;
@@ -297,11 +350,7 @@ export function paneLibraryID(pane: any): number | undefined {
 function resolveLibraryID(win: any): number {
   const ZoteroPane = win?.ZoteroPane;
   try {
-    return (
-      paneLibraryID(ZoteroPane) ??
-      Zotero.Libraries.userLibraryID ??
-      0
-    );
+    return paneLibraryID(ZoteroPane) ?? Zotero.Libraries.userLibraryID ?? 0;
   } catch {
     try {
       return Zotero.Libraries.userLibraryID ?? 0;

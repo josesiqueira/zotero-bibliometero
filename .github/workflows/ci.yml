@@ -27,6 +27,11 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      - name: Unit tests
+        # The data layer (aggregation, author identity, grouping) is pure and
+        # runs under Node; the live harness in test/live/ needs a real Zotero.
+        run: npm run test:unit
+
       - name: Build plugin (.xpi)
         # Proves the plugin packages cleanly. We deliberately do NOT run
         # `npx zotero-plugin test` in CI: the test runner launches a real

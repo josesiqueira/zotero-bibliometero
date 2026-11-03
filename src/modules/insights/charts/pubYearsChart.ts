@@ -1,12 +1,13 @@
 /**
  * pubYearsChart.ts - "pubs-per-year" VizModule.
  *
- * Vertical bar histogram over PublicationsPerYearData.buckets. Y is a linear
- * scale [0, niceMax(maxCount)] with nice ticks + gridlines; X is a band scale
- * over the year keys (the null/missing bucket renders last as an "Unknown" bar).
- * Hovering a bar shows {year, count} and dims its siblings. X labels rotate when
- * the axis is dense. Theme colours come from ctx.theme(); export is consistent
- * because every colour is set as a concrete attribute.
+ * Vertical bars of items per publication year, every year between the first and
+ * the last present (empty years are zero-height, so gaps are visible). Items
+ * with no usable date get a separate "No date" bar after a gap. The current
+ * year is drawn lighter and labelled "(to date)" so a partial year is not read
+ * as a decline. Clicking a bar selects exactly the items it counts.
+ *
+ * draw() is shared by the live panel and the exported figure.
  */
 
 import type {
@@ -17,15 +18,17 @@ import type {
   PublicationsPerYearData,
 } from "../types";
 import { svgEl, svgText, createPlot, clearSvg } from "./chartkit/svg";
-import { linearScale, bandScale, niceMax, niceTicks } from "./chartkit/scale";
-import { renderValueAxis, renderBandAxis, type PlotArea } from "./chartkit/axis";
+import { linearScale, niceMax, niceTicks } from "./chartkit/scale";
+import { renderValueAxis, type PlotArea } from "./chartkit/axis";
 import { createTooltip, type Tooltip } from "./chartkit/tooltip";
-import { serializeSVG, svgToPng } from "./chartkit/exporter";
+import { exportFigure, FONT_FAMILY, longDate } from "./chartkit/figure";
 
-const UNKNOWN_KEY = "__unknown";
-
-export function createPubYearsChart(): VizModule {
-  return new PubYearsChart();
+interface Bar {
+  label: string;
+  year: number | null;
+  count: number;
+  itemIds: number[];
+  partial: boolean;
 }
 
 export class PubYearsChart implements VizModule {
@@ -49,23 +52,29 @@ export class PubYearsChart implements VizModule {
   async mount(container: HTMLElement, ctx: VizContext): Promise<void> {
     this.ctx = ctx;
     this.container = container;
-    container.textContent = "";
     container.style.position = "relative";
     const rect = container.getBoundingClientRect();
     this.width = Math.max(1, Math.floor(rect.width || 600));
     this.height = Math.max(1, Math.floor(rect.height || 360));
 
     this.svg = createPlot(ctx.doc, this.width, this.height);
+    this.svg.setAttribute("font-family", FONT_FAMILY);
+    this.svg.setAttribute("role", "img");
     container.appendChild(this.svg);
     this.tooltip = createTooltip(ctx.doc, container, ctx.theme());
 
+    await this.load();
+    this.render();
+  }
+
+  private async load(): Promise<void> {
+    if (!this.ctx) return;
     try {
-      this.data = await ctx.data.perYear();
+      this.data = await this.ctx.data.perYear();
     } catch (e) {
-      ctx.log("[pubs-per-year] perYear failed", e);
+      this.ctx.log("[pubs-per-year] perYear failed", e);
       this.data = null;
     }
-    this.render();
   }
 
   private hostXY(clientX: number, clientY: number): { x: number; y: number } {
@@ -75,97 +84,155 @@ export class PubYearsChart implements VizModule {
       : { x: clientX, y: clientY };
   }
 
+  private bars(): Bar[] {
+    const d = this.data;
+    if (!d) return [];
+    const thisYear = new Date().getFullYear();
+    const out: Bar[] = [];
+    for (const b of d.buckets) {
+      if (b.year === null) continue;
+      const partial = b.year === thisYear;
+      out.push({
+        label: partial ? `${b.year} (to date)` : String(b.year),
+        year: b.year,
+        count: b.count,
+        itemIds: b.itemIds,
+        partial,
+      });
+    }
+    const none = d.buckets.find((b) => b.year === null);
+    if (none && none.count > 0) {
+      out.push({
+        label: "No date",
+        year: null,
+        count: none.count,
+        itemIds: none.itemIds,
+        partial: false,
+      });
+    }
+    return out;
+  }
+
   private render(): void {
     if (!this.svg || !this.ctx) return;
-    const theme = this.ctx.theme();
     clearSvg(this.svg);
     this.svg.setAttribute("viewBox", `0 0 ${this.width} ${this.height}`);
+    const theme = this.ctx.theme();
+    this.draw(this.svg, this.width, this.height, theme, true);
+    this.updateStatus();
+  }
 
-    const d = this.data;
-    if (!d || d.buckets.length === 0) {
-      this.renderEmpty(theme, "No dated items in this scope.");
-      this.updateStatus();
+  /** Draw the chart into `root` (live or export). */
+  private draw(
+    root: SVGElement,
+    width: number,
+    height: number,
+    theme: ThemeInfo,
+    interactive: boolean,
+  ): void {
+    const doc = root.ownerDocument as Document;
+    const bars = this.bars();
+    const dated = bars.filter((b) => b.year !== null);
+    if (!bars.length) {
+      root.appendChild(
+        svgText(
+          doc,
+          "No items in this view. Add items, or switch to Whole library.",
+          {
+            x: width / 2,
+            y: height / 2,
+            "text-anchor": "middle",
+            "font-size": 13,
+            fill: theme.muted,
+          },
+        ),
+      );
       return;
     }
 
-    // Order: ascending years, the null bucket rendered last as "Unknown".
-    const dated = d.buckets.filter((b) => b.year !== null);
-    const nullBucket = d.buckets.find((b) => b.year === null);
-    const keyed: { key: string; label: string; count: number }[] = dated.map(
-      (b) => ({ key: String(b.year), label: String(b.year), count: b.count }),
-    );
-    if (nullBucket && nullBucket.count > 0) {
-      keyed.push({
-        key: UNKNOWN_KEY,
-        label: "Unknown",
-        count: nullBucket.count,
-      });
-    }
-    if (keyed.length === 0) {
-      this.renderEmpty(theme, "No dated items in this scope.");
-      this.updateStatus();
-      return;
-    }
-
-    const maxCount = keyed.reduce((m, b) => Math.max(m, b.count), 0);
+    const maxCount = bars.reduce((m, b) => Math.max(m, b.count), 0);
     const top = niceMax(maxCount);
-
     const area: PlotArea = {
-      left: 40,
-      top: 14,
-      width: Math.max(1, this.width - 40 - 12),
-      height: Math.max(1, this.height - 14 - 40),
+      left: 44,
+      top: 16,
+      width: Math.max(1, width - 44 - 16),
+      height: Math.max(1, height - 16 - 34),
     };
     const yScale = linearScale([0, top], [area.top + area.height, area.top]);
-    const xScale = bandScale(
-      keyed.map((b) => b.key),
-      [area.left, area.left + area.width],
-      0.25,
+    root.appendChild(
+      renderValueAxis(doc, area, yScale, niceTicks(maxCount, 5), theme),
     );
 
-    // Axes + gridlines first (under the bars).
-    this.svg.appendChild(
-      renderValueAxis(this.ctx.doc, area, yScale, niceTicks(maxCount, 5), theme),
-    );
-    // Rotate x labels when bars are narrow; thin them if extremely dense.
-    const dense = xScale.bandwidth < 26;
-    const everyNth = xScale.step < 14 ? Math.ceil(14 / xScale.step) : 1;
-    const labelMap = new Map(keyed.map((b) => [b.key, b.label]));
-    this.svg.appendChild(
-      renderBandAxis(
-        this.ctx.doc,
-        area,
-        xScale,
-        (k) => labelMap.get(k) ?? k,
-        theme,
-        { rotate: dense, everyNth },
-      ),
-    );
-
-    // Bars.
-    const barsG = svgEl(this.ctx.doc, "g", { class: "bm-bars" }) as SVGGElement;
+    // Slots: one per dated year, a one-slot gap, then "No date".
+    const hasNone = bars.length > dated.length;
+    const slots = dated.length + (hasNone ? 2 : 0);
+    const step = area.width / Math.max(1, slots);
+    const barW = Math.max(1, step * 0.72);
+    const slotX = (i: number) => area.left + i * step + (step - barW) / 2;
     const yZero = yScale(0);
-    keyed.forEach((b) => {
-      const band = xScale(b.key);
-      if (!band) return;
+
+    // Year labels: as many as fit (about 34 px each), always the first, the
+    // last, and round decades in between.
+    const fitEvery = Math.max(1, Math.ceil(34 / step));
+    const every =
+      [1, 2, 5, 10, 20, 25, 50, 100].find((n) => n >= fitEvery) ?? 100;
+    const baseline = area.top + area.height;
+    root.appendChild(
+      svgEl(doc, "line", {
+        x1: area.left,
+        y1: baseline,
+        x2: area.left + area.width,
+        y2: baseline,
+        stroke: theme.muted,
+        "stroke-width": 1,
+      }),
+    );
+
+    const g = svgEl(doc, "g", { class: "bm-bars" }) as SVGGElement;
+    root.appendChild(g);
+    bars.forEach((b, idx) => {
+      const isNone = b.year === null;
+      const slot = isNone ? dated.length + 1 : idx;
+      const x = slotX(slot);
       const y = yScale(b.count);
       const h = Math.max(0, yZero - y);
-      const isUnknown = b.key === UNKNOWN_KEY;
-      const rect = svgEl(this.ctx!.doc, "rect", {
-        x: band.start,
+      const rect = svgEl(doc, "rect", {
+        x,
         y,
-        width: band.width,
+        width: barW,
         height: h,
-        rx: 2,
-        fill: isUnknown ? theme.muted : theme.accent,
+        rx: Math.min(2, barW / 3),
+        fill: isNone ? theme.muted : theme.accent,
+        "fill-opacity": b.partial ? 0.45 : 1,
         class: "bm-year-bar",
       });
-      const titleEl = svgEl(this.ctx!.doc, "title");
-      titleEl.textContent = `${b.label}: ${b.count}`;
-      rect.appendChild(titleEl);
+      const title = svgEl(doc, "title");
+      title.textContent = `${b.label}: ${b.count} item${b.count === 1 ? "" : "s"}`;
+      rect.appendChild(title);
+      g.appendChild(rect);
 
+      const yr = b.year ?? 0;
+      const isLast = idx === dated.length - 1;
+      const showLabel =
+        isNone ||
+        yr % every === 0 ||
+        (isLast && yr % every >= every / 2) ||
+        (idx === 0 && every - (yr % every) >= every / 2);
+      if (showLabel) {
+        root.appendChild(
+          svgText(doc, b.partial ? `${b.year}*` : b.label, {
+            x: x + barW / 2,
+            y: baseline + 16,
+            "text-anchor": "middle",
+            "font-size": 11,
+            fill: theme.muted,
+          }),
+        );
+      }
+
+      if (!interactive) return;
       const onShow = (ev: Event) => {
-        for (const sib of barsG.querySelectorAll(".bm-year-bar")) {
+        for (const sib of g.querySelectorAll(".bm-year-bar")) {
           (sib as SVGElement).setAttribute(
             "opacity",
             sib === rect ? "1" : "0.35",
@@ -177,54 +244,62 @@ export class PubYearsChart implements VizModule {
           [
             { text: b.label, variant: "strong" },
             { text: `${b.count} item${b.count === 1 ? "" : "s"}` },
+            ...(b.count ? [{ text: "Click to select them" }] : []),
           ],
           xy.x,
           xy.y,
         );
       };
-      // Click a dated bar -> find that year's items in the library.
-      if (!isUnknown) {
+      if (b.count > 0) {
         (rect as unknown as SVGElement).style.cursor = "pointer";
         rect.addEventListener("click", () => {
-          this.ctx?.searchLibrary?.(b.key);
+          this.ctx?.showItems?.(
+            b.itemIds,
+            isNone ? "items with no date" : `published in ${b.year}`,
+          );
         });
       }
       rect.addEventListener("pointerenter", onShow);
       rect.addEventListener("pointermove", onShow);
       rect.addEventListener("pointerleave", () => {
-        for (const sib of barsG.querySelectorAll(".bm-year-bar")) {
+        for (const sib of g.querySelectorAll(".bm-year-bar")) {
           (sib as SVGElement).setAttribute("opacity", "1");
         }
         this.tooltip?.hide();
       });
-      barsG.appendChild(rect);
     });
-    this.svg.appendChild(barsG);
-    this.updateStatus();
+
+    if (dated.some((b) => b.partial)) {
+      root.appendChild(
+        svgText(doc, "* current year, still in progress", {
+          x: area.left + area.width,
+          y: area.top - 4,
+          "text-anchor": "end",
+          "font-size": 11,
+          fill: theme.muted,
+        }),
+      );
+    }
   }
 
-  private renderEmpty(theme: ThemeInfo, msg: string): void {
-    if (!this.svg || !this.ctx) return;
-    this.svg.appendChild(
-      svgText(this.ctx.doc, msg, {
-        x: this.width / 2,
-        y: this.height / 2,
-        "text-anchor": "middle",
-        "font-size": 13,
-        fill: theme.muted,
-      }),
-    );
+  private summary(): string {
+    const d = this.data;
+    if (!d) return "";
+    const range =
+      d.minYear !== null && d.maxYear !== null
+        ? `, ${d.minYear} to ${d.maxYear}`
+        : "";
+    const missing = d.missing > 0 ? `, ${d.missing} with no date` : "";
+    return `${d.total} items${range}${missing}`;
   }
 
   private updateStatus(): void {
     if (!this.ctx || !this.data) return;
-    const d = this.data;
-    const range =
-      d.minYear !== null && d.maxYear !== null
-        ? `${d.minYear} to ${d.maxYear}`
-        : "no dated items";
-    const missing = d.missing > 0 ? `, ${d.missing} undated` : "";
-    this.ctx.setStatus(`${d.total} items (${range})${missing}`);
+    this.ctx.setStatus(`${this.summary()}. Click a bar to select its items.`);
+    this.svg?.setAttribute(
+      "aria-label",
+      `Publications per year: ${this.summary()}`,
+    );
   }
 
   onResize(width: number, height: number): void {
@@ -239,55 +314,41 @@ export class PubYearsChart implements VizModule {
   }
 
   async onDataChange(): Promise<void> {
-    if (!this.ctx) return;
-    try {
-      this.data = await this.ctx.data.perYear();
-    } catch (e) {
-      this.ctx.log("[pubs-per-year] refetch failed", e);
-    }
+    await this.load();
     this.render();
   }
 
   destroy(): void {
     this.tooltip?.destroy();
     this.tooltip = null;
-    if (this.svg) {
-      try {
-        this.svg.remove();
-      } catch {
-        /* ignore */
-      }
-    }
+    this.svg?.remove();
     this.svg = null;
-    if (this.container) this.container.textContent = "";
     this.container = null;
     this.ctx = null;
     this.data = null;
   }
 
-  async exportSVG(): Promise<ExportResult> {
-    if (!this.svg || !this.ctx) throw new Error("chart not mounted");
-    const text = serializeSVG(this.svg, this.ctx.theme());
-    return { text, suggestedName: "bibliometero-pubs-per-year", format: "svg" };
+  private exportAs(fmt: "svg" | "png"): Promise<ExportResult> {
+    if (!this.ctx) throw new Error("chart not mounted");
+    const scope = this.ctx.scopeLabel?.() || "My Library";
+    return exportFigure(
+      this.ctx.doc,
+      fmt,
+      {
+        title: "Publications per year",
+        caption: `${scope}: ${this.summary()}. ${longDate()}. Zotero Bibliometero.`,
+        name: "bibliometero-publications-per-year",
+      },
+      (root, w, h, theme) => this.draw(root, w, h, theme, false),
+    );
   }
 
-  async exportPNG(): Promise<ExportResult> {
-    if (!this.svg || !this.ctx) throw new Error("chart not mounted");
-    const theme = this.ctx.theme();
-    const text = serializeSVG(this.svg, theme);
-    const blob = await svgToPng(
-      this.ctx.doc,
-      text,
-      this.width,
-      this.height,
-      2,
-      theme.bg,
-    );
-    return {
-      blob,
-      suggestedName: "bibliometero-pubs-per-year",
-      format: "png",
-    };
+  exportSVG(): Promise<ExportResult> {
+    return this.exportAs("svg");
+  }
+
+  exportPNG(): Promise<ExportResult> {
+    return this.exportAs("png");
   }
 
   testHooks(): Record<string, (...args: any[]) => any> {

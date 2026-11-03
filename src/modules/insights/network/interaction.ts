@@ -144,7 +144,7 @@ export class InteractionController {
     let best: NetNode | null = null;
     let bestD2 = Infinity;
     for (const n of model.nodes) {
-      const r = nodeRadius(n) + slackWorld;
+      const r = nodeRadius(n) / v.scale + slackWorld;
       const dx = n.x - w.x;
       const dy = n.y - w.y;
       const d2 = dx * dx + dy * dy;
@@ -243,7 +243,10 @@ export class InteractionController {
       const { x, y } = this.cb.localPoint(ev);
       const movedX = x - this.pressX;
       const movedY = y - this.pressY;
-      if (movedX * movedX + movedY * movedY < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+      if (
+        movedX * movedX + movedY * movedY <
+        DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX
+      ) {
         // A press on empty background with no real movement: background click.
         this.cb.onBackgroundClick();
       }
@@ -280,7 +283,11 @@ export class InteractionController {
    * Synthesize a pointer event for the live harness. Builds a minimal
    * PointerEvent-like object and routes it through the same handlers.
    */
-  dispatch(type: "down" | "move" | "up" | "cancel", x: number, y: number): void {
+  dispatch(
+    type: "down" | "move" | "up" | "cancel",
+    x: number,
+    y: number,
+  ): void {
     const rect = this.canvas.getBoundingClientRect();
     const ev = {
       pointerId: 1,

@@ -35,7 +35,10 @@ describe("parseYearFromString", function () {
   });
 
   it("recovers a plausible year from free text", function () {
-    assert.strictEqual(parseYearFromString("Published in 1987, reprinted"), 1987);
+    assert.strictEqual(
+      parseYearFromString("Published in 1987, reprinted"),
+      1987,
+    );
   });
 
   it("returns null for text with no plausible year", function () {
@@ -82,7 +85,10 @@ describe("buildPerYear", function () {
       false,
     );
     const realYears = data.buckets.filter((b) => b.year !== null);
-    assert.deepEqual(realYears.map((b) => b.year), [2010, 2021]);
+    assert.deepEqual(
+      realYears.map((b) => b.year),
+      [2010, 2021],
+    );
     assert.strictEqual(realYears.find((b) => b.year === 2010)!.count, 2);
     const last = data.buckets[data.buckets.length - 1];
     assert.isNull(last.year);

@@ -26,7 +26,6 @@ import type {
 import type { InsightsSource } from "./set/types";
 import { paletteFor, resolveTheme } from "./theme";
 import { getPrefRaw, setPrefRaw } from "../../utils/prefs";
-import { createDataAccessors } from "./data";
 
 /** What the hub must supply for a context to be built. */
 export interface ContextDeps {
@@ -37,8 +36,10 @@ export interface ContextDeps {
   statusEl: HTMLElement;
   /** Topbar slot a view may fill with its own controls. */
   controlsSlot: HTMLElement;
-  /** Ask the hub to switch to the co-authorship view focused on an author. */
-  focusAuthor(authorKey: string, label: string): void;
+  /** The window's shared data cache. */
+  data: VizDataAccessors;
+  /** Library the panel currently shows (click-throughs go there). */
+  libraryID(): number;
 }
 
 /** The active data source: "library" (default) or the curated "set". */
@@ -50,16 +51,6 @@ function readSource(): InsightsSource {
     /* ignore */
   }
   return "library";
-}
-
-function readNetworkCap(): number {
-  try {
-    const v = Number(getPrefRaw("hub.networkCap"));
-    if (isFinite(v) && v > 0) return Math.floor(v);
-  } catch {
-    /* ignore */
-  }
-  return 400;
 }
 
 function makePrefs(activeId: string): VizPrefs {
@@ -132,73 +123,48 @@ function selectItemIn(win: _ZoteroTypes.MainWindow, itemId: number): void {
   );
 }
 
-/**
- * Drill-down: take the user to the library and run Zotero's quick search for
- * `text` (author name / year / source), so the matching papers filter into the
- * items list and they can browse them normally. Reversible by clearing the
- * search. We jump to My Library first so the search covers everything.
- */
-async function searchLibraryIn(
-  win: _ZoteroTypes.MainWindow,
-  text: string,
-): Promise<void> {
-  const w = win as any;
-  const q = (text || "").trim();
-  if (!q) return;
-  try {
-    w.Zotero_Tabs?.select?.("zotero-pane");
-    try {
-      await w.ZoteroPane?.collectionsView?.selectLibrary?.(
-        Zotero.Libraries.userLibraryID,
-      );
-    } catch {
-      /* stay in the current collection if selecting the library fails */
-    }
-    const sb = win.document.getElementById("zotero-tb-search") as any;
-    if (sb) {
-      sb.value = q;
-      if (typeof sb.doCommand === "function") sb.doCommand();
-      else sb.dispatchEvent(new win.Event("command", { bubbles: true }));
-    } else if (typeof w.ZoteroPane?.search === "function") {
-      w.ZoteroPane.search(q);
-    }
-  } catch (e) {
-    ztoolkit.log("[Bibliometero Insights] searchLibrary failed", e);
+/** Empty Zotero's quick-search box so a selection is not hidden by a filter. */
+function clearQuickSearch(win: _ZoteroTypes.MainWindow): void {
+  const sb = win.document.getElementById("zotero-tb-search") as any;
+  if (sb && sb.value) {
+    sb.value = "";
+    if (typeof sb.doCommand === "function") sb.doCommand();
   }
 }
 
-/** Drill-down: select a set of items in the library (e.g. all of one type). */
-async function revealItemsIn(
+/**
+ * Drill-down: select exactly these items in the item list, so a bar that says
+ * 12 leads to the same 12 items (a quick search on the label would match other
+ * fields or nothing at all). Opens the library root the data came from, clears
+ * the quick search, selects, and returns how many were selected.
+ */
+async function showItemsIn(
   win: _ZoteroTypes.MainWindow,
+  libraryID: number,
   itemIds: number[],
-): Promise<void> {
+): Promise<number> {
   const w = win as any;
   const ids = (itemIds || []).filter((n) => Number.isFinite(n));
-  if (!ids.length) return;
+  if (!ids.length) return 0;
+  w.Zotero_Tabs?.select?.("zotero-pane");
+  const zp = w.ZoteroPane;
   try {
-    w.Zotero_Tabs?.select?.("zotero-pane");
-    try {
-      await w.ZoteroPane?.collectionsView?.selectLibrary?.(
-        Zotero.Libraries.userLibraryID,
-      );
-    } catch {
-      /* stay put if selecting the library fails */
-    }
-    // Clear any quick search so the whole library is visible, then select.
-    const sb = win.document.getElementById("zotero-tb-search") as any;
-    if (sb && sb.value) {
-      sb.value = "";
-      if (typeof sb.doCommand === "function") sb.doCommand();
-    }
-    if (typeof w.ZoteroPane?.selectItems === "function") {
-      await w.ZoteroPane.selectItems(ids);
-    } else if (typeof w.ZoteroPane?.itemsView?.selectItems === "function") {
-      await w.ZoteroPane.itemsView.selectItems(ids);
-    } else if (typeof w.ZoteroPane?.selectItem === "function") {
-      await w.ZoteroPane.selectItem(ids[0]);
-    }
+    await zp?.collectionsView?.selectLibrary?.(libraryID);
+  } catch {
+    /* stay in the current view if the library cannot be selected */
+  }
+  clearQuickSearch(win);
+  try {
+    if (typeof zp?.selectItems === "function") await zp.selectItems(ids);
+    else if (typeof zp?.selectItem === "function") await zp.selectItem(ids[0]);
   } catch (e) {
-    ztoolkit.log("[Bibliometero Insights] revealItems failed", e);
+    ztoolkit.log("[Bibliometero Insights] showItems failed", e);
+    return 0;
+  }
+  try {
+    return zp?.getSelectedItems?.().length ?? ids.length;
+  } catch {
+    return ids.length;
   }
 }
 
@@ -211,11 +177,7 @@ async function openCollectionIn(
   if (!Number.isFinite(collectionID)) return;
   try {
     w.Zotero_Tabs?.select?.("zotero-pane");
-    const sb = win.document.getElementById("zotero-tb-search") as any;
-    if (sb && sb.value) {
-      sb.value = "";
-      if (typeof sb.doCommand === "function") sb.doCommand();
-    }
+    clearQuickSearch(win);
     const cv = w.ZoteroPane?.collectionsView;
     if (typeof cv?.selectCollection === "function") {
       await cv.selectCollection(collectionID);
@@ -228,16 +190,12 @@ async function openCollectionIn(
 }
 
 export function buildContext(deps: ContextDeps): VizContext {
-  const { win, activeId, statusEl, controlsSlot } = deps;
+  const { win, activeId, statusEl, controlsSlot, data } = deps;
 
-  const data: VizDataAccessors = createDataAccessors({
-    getWin: () => win,
-    // The data layer keys its cache on the source ("library" | "set"); pass the
-    // source through the (frozen) getScope getter. Agent 5's data layer reads
-    // `insights.source` for "set"; treating source as the scope key is by design.
-    getScope: () => readSource() as unknown as VizScope,
-    getNetworkCap: () => readNetworkCap(),
-  });
+  const setStatus = (text: string, opts?: { warn?: boolean }) => {
+    statusEl.textContent = text || "";
+    statusEl.classList.toggle("bm-warn", !!opts?.warn);
+  };
 
   const ctx: VizContext = {
     win,
@@ -256,26 +214,30 @@ export function buildContext(deps: ContextDeps): VizContext {
     selectItem(itemId: number) {
       selectItemIn(win, itemId);
     },
-    focusAuthor(authorKey: string, label: string) {
-      // Clicking an author now finds their papers in the library (not a jump to
-      // another graph). authorKey is unused; the display label drives the search.
-      void authorKey;
-      void searchLibraryIn(win, label);
-    },
-    searchLibrary(text: string) {
-      void searchLibraryIn(win, text);
-    },
-    revealItems(itemIds: number[]) {
-      void revealItemsIn(win, itemIds);
+    showItems(itemIds: number[], what: string) {
+      void showItemsIn(win, deps.libraryID(), itemIds).then((n) => {
+        if (!n) {
+          setStatus(`Could not select the items for ${what}.`, { warn: true });
+          return;
+        }
+        const noun = n === 1 ? "item" : "items";
+        setStatus(`Selected ${n} ${noun} in the item list: ${what}.`);
+      });
     },
     openCollection(collectionID: number) {
       void openCollectionIn(win, collectionID);
     },
-    prefs: makePrefs(activeId),
-    setStatus(text: string, opts?: { warn?: boolean }) {
-      statusEl.textContent = text || "";
-      statusEl.classList.toggle("bm-warn", !!opts?.warn);
+    scopeLabel(): string {
+      let name = "My Library";
+      try {
+        name = Zotero.Libraries.getName(deps.libraryID()) || name;
+      } catch {
+        /* keep default */
+      }
+      return readSource() === "set" ? `Curated set in ${name}` : name;
     },
+    prefs: makePrefs(activeId),
+    setStatus,
     controlsSlot,
     log(...args: unknown[]) {
       ztoolkit.log(...args);

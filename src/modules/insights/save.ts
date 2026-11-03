@@ -87,39 +87,35 @@ function notifySaved(path: string): void {
   }
 }
 
-/** Write `result` to disk via the native save dialog. */
+/**
+ * Write `result` to disk via the native save dialog. Returns the saved path,
+ * or null when the user cancelled. Throws when the file cannot be written, so
+ * the panel can say so.
+ */
 export async function saveExport(
   win: _ZoteroTypes.MainWindow,
   result: ExportResult,
-): Promise<void> {
-  let data: Uint8Array | string;
-  try {
-    data = await payload(result);
-  } catch (e) {
-    ztoolkit.log("[Bibliometero Insights] export payload error", e);
-    return;
-  }
+): Promise<string | null> {
+  const data = await payload(result);
 
   let path = await pickPath(win, result);
-  if (path === null) return; // user cancelled: write nothing
+  if (path === null) return null; // user cancelled: write nothing
 
   if (path === undefined) {
     // Picker genuinely unavailable: write into the data dir so the export is
     // not lost, and tell the user where it went.
     const dir = (Zotero as any).DataDirectory?.dir;
-    if (!dir) {
-      ztoolkit.log("[Bibliometero Insights] no writable directory for export");
-      return;
-    }
+    if (!dir) throw new Error("no folder to save into");
     const sep = dir.endsWith("/") || dir.endsWith("\\") ? "" : "/";
     path = `${dir}${sep}${suggestedFileName(result)}`;
   }
 
-  try {
-    await Zotero.File.putContentsAsync(path, data as any);
-    ztoolkit.log("[Bibliometero Insights] export written:", path);
-    notifySaved(path);
-  } catch (e) {
-    ztoolkit.log("[Bibliometero Insights] saveExport write failed", e);
-  }
+  // Some platforms return the typed name without the extension.
+  const ext = `.${extFor(result)}`;
+  if (!path.toLowerCase().endsWith(ext)) path += ext;
+
+  await Zotero.File.putContentsAsync(path, data as any);
+  ztoolkit.log("[Bibliometero Insights] export written:", path);
+  notifySaved(path);
+  return path;
 }

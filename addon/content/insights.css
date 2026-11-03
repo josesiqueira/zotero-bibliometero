@@ -10,8 +10,7 @@
  *
  * Everything is scoped under .bm-host / #bibliometero-dock so it never leaks
  * into the rest of the Zotero UI. The concrete light/dark token sets live on
- * .bibliometero-theme-light / .bibliometero-theme-dark (names reused from
- * graphView.css so views share the same variables).
+ * .bibliometero-theme-light / .bibliometero-theme-dark.
  */
 
 /* ---- dock container (bottom dock host) ---- */
@@ -26,7 +25,7 @@
   background: var(--bibliometero-chart-bg, #fafafa);
   color: var(--bibliometero-chart-fg, #222);
   font: menu;
-  font-size: 12px;
+  font-size: var(--zotero-font-size, 12px);
 }
 
 /* ---- resize handle (manual pointer-drag) ---- */
@@ -54,7 +53,7 @@
   min-height: 0;
   box-sizing: border-box;
   font: menu;
-  font-size: 12px;
+  font-size: var(--zotero-font-size, 12px);
 }
 
 .bm-host.bm-host-tab {
@@ -195,11 +194,11 @@
 .bm-hub-status {
   flex: 0 0 auto;
   padding: 4px 10px;
-  font-size: 11px;
-  opacity: 0.82;
-  white-space: nowrap;
+  font-size: 0.95em;
+  line-height: 1.35;
+  opacity: 0.85;
+  max-height: 4.2em;
   overflow: hidden;
-  text-overflow: ellipsis;
   border-top: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
 }
 
@@ -238,4 +237,140 @@
   --bibliometero-chart-grid: rgba(255, 255, 255, 0.12);
   color: #e6e6e6;
   background: #1d1e22;
+}
+
+.bibliometero-theme-dark .bm-nav-tab.bm-active,
+.bibliometero-theme-dark .bm-seg-btn.bm-active {
+  color: #111318;
+}
+
+.bm-nav-tab:focus-visible,
+.bm-seg-btn:focus-visible,
+.bm-hub-btn:focus-visible,
+.bm-control input:focus-visible {
+  outline: 2px solid var(--bibliometero-graph-accent, #1a73e8);
+  outline-offset: 1px;
+}
+
+/* ---- one view activation fills the viewport ---- */
+.bm-view-host {
+  position: absolute;
+  inset: 0;
+}
+
+.bm-view-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bm-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.bm-control input {
+  width: 4.5em;
+  font: inherit;
+}
+
+.bibliometero-network-toolbar {
+  display: flex;
+  gap: 4px;
+}
+
+/* ---- empty / error message in place of a chart ---- */
+.bm-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--bibliometero-chart-muted, #6b6b6b);
+  font-size: 1.1em;
+  line-height: 1.5;
+}
+
+/* ---- network canvas, legend, tooltip ---- */
+.bibliometero-network-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.bibliometero-network-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.bibliometero-network-canvas.bibliometero-grabbing {
+  cursor: grabbing;
+}
+
+.bibliometero-network-legend {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: 260px;
+  max-height: calc(100% - 16px);
+  overflow: hidden;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--bibliometero-graph-border, rgba(128, 128, 128, 0.3));
+  background: var(--bibliometero-chart-bg, #fafafa);
+  opacity: 0.94;
+  pointer-events: none;
+  line-height: 1.5;
+}
+
+.bm-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bm-legend-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.bm-legend-note {
+  margin-top: 2px;
+  color: var(--bibliometero-chart-muted, #6b6b6b);
+}
+
+.bibliometero-network-tooltip {
+  position: absolute;
+  z-index: 2;
+  display: none;
+  max-width: 360px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: var(--bibliometero-graph-tip-bg, rgba(40, 40, 46, 0.94));
+  color: #fff;
+  pointer-events: none;
+  line-height: 1.4;
+}
+
+.bibliometero-network-tooltip.bibliometero-show {
+  display: block;
+}
+
+.bm-tip-title {
+  font-weight: 600;
+}
+
+.bm-tip-sub {
+  opacity: 0.85;
 }

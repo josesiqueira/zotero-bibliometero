@@ -99,11 +99,7 @@ export type DataAccessors = VizDataAccessors & {
   /** Drop every cached bundle (e.g. on source change or explicit refresh). */
   invalidate(): void;
   /** Notifier hook: invalidate when items / collections change. */
-  onNotify(
-    event: string,
-    type: string,
-    ids: Array<string | number>,
-  ): void;
+  onNotify(event: string, type: string, ids: Array<string | number>): void;
   /**
    * Optional teardown: detach the set-store subscription. Safe to call more than
    * once. Existing callers that never call this simply keep the subscription for
@@ -114,15 +110,13 @@ export type DataAccessors = VizDataAccessors & {
 
 /** Slice a fully-ranked sources precompute to `limit`. */
 function sliceSources(all: TopSourcesData, limit: number): TopSourcesData {
-  const entries =
-    limit > 0 ? all.entries.slice(0, limit) : all.entries.slice();
+  const entries = limit > 0 ? all.entries.slice(0, limit) : all.entries.slice();
   return { entries, total: all.total, missing: all.missing };
 }
 
 /** Slice a fully-ranked authors precompute to `limit`. */
 function sliceAuthors(all: TopAuthorsData, limit: number): TopAuthorsData {
-  const entries =
-    limit > 0 ? all.entries.slice(0, limit) : all.entries.slice();
+  const entries = limit > 0 ? all.entries.slice(0, limit) : all.entries.slice();
   return { entries, totalAuthors: all.totalAuthors };
 }
 
@@ -156,9 +150,7 @@ function collectionName(id: number): string {
  * legacy `getScope`. For source "set" the bundle is rebuilt whenever the curated
  * set changes (we subscribe to `insightsSet`).
  */
-export function createDataAccessors(
-  opts: DataAccessorOptions,
-): DataAccessors {
+export function createDataAccessors(opts: DataAccessorOptions): DataAccessors {
   // Cache slot per `${source}:${libraryID}`. A pending promise is stored while a
   // bundle is being built so concurrent accessor calls share one gather pass.
   const cache = new Map<string, Promise<ScopeBundle>>();
@@ -192,11 +184,7 @@ export function createDataAccessors(
     try {
       const win = opts.getWin?.();
       const pane = win?.ZoteroPane;
-      return (
-        paneLibraryID(pane) ??
-        Zotero.Libraries.userLibraryID ??
-        0
-      );
+      return paneLibraryID(pane) ?? Zotero.Libraries.userLibraryID ?? 0;
     } catch {
       try {
         return Zotero.Libraries.userLibraryID ?? 0;
@@ -238,7 +226,7 @@ export function createDataAccessors(
       records,
       localizedType,
       collectionName,
-      8,
+      15,
     );
     // topN = 0 means "rank everything"; accessors slice down per request.
     const topSourcesAll = buildTopSources(records, 0);
@@ -319,19 +307,13 @@ export function createDataAccessors(
       cache.clear();
     },
 
-    onNotify(
-      event: string,
-      type: string,
-      _ids: Array<string | number>,
-    ): void {
+    onNotify(event: string, type: string, _ids: Array<string | number>): void {
       void _ids;
       // Item or collection mutations can change any scope's contents, so the
       // conservative correct move is to drop the whole cache. Membership and
       // metadata edits surface as item/collection/collection-item events.
       const relevant =
-        type === "item" ||
-        type === "collection" ||
-        type === "collection-item";
+        type === "item" || type === "collection" || type === "collection-item";
       const mutating =
         event === "add" ||
         event === "modify" ||

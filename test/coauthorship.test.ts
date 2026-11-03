@@ -7,8 +7,9 @@ import type { ItemRecord } from "../src/modules/insights/data/extract.ts";
  *
  * One undirected edge per co-authoring pair within an item, weight = number of
  * shared papers, degree = incident edge count. Edges are canonicalised so
- * (a,b) == (b,a). A node cap keeps the top authors by paperCount and drops
- * dangling edges, marking the result truncated. All fixtures are plain records.
+ * (a,b) == (b,a). Authors need a minimum number of items (2, or 1 when 2
+ * would leave almost nobody), raised until at most `cap` remain; authors left
+ * without links are dropped. All fixtures are plain records.
  */
 
 let nextId = 1;
@@ -44,7 +45,10 @@ function edgeBetween(
 
 describe("buildCoAuthorship", function () {
   it("2 authors on 1 paper -> 1 edge of weight 1", function () {
-    const data = buildCoAuthorship([paper([A("Smith", "John"), A("Doe", "Jane")])], 0);
+    const data = buildCoAuthorship(
+      [paper([A("Smith", "John"), A("Doe", "Jane")])],
+      0,
+    );
     assert.lengthOf(data.nodes, 2);
     assert.lengthOf(data.edges, 1);
     assert.strictEqual(data.edges[0].weight, 1);
@@ -79,16 +83,22 @@ describe("buildCoAuthorship", function () {
     }
   });
 
-  it("single-author paper -> 1 node, 0 edges", function () {
+  it("an author with no co-author on the map is not drawn", function () {
     const data = buildCoAuthorship([paper([A("Solo", "Sam")])], 0);
-    assert.lengthOf(data.nodes, 1);
+    assert.lengthOf(
+      data.nodes,
+      0,
+      "isolated authors say nothing about collaboration",
+    );
     assert.lengthOf(data.edges, 0);
-    assert.strictEqual(data.nodes[0].degree, 0);
-    assert.strictEqual(data.nodes[0].paperCount, 1);
+    assert.strictEqual(data.totalAuthors, 1);
   });
 
   it("canonicalises undirected edges (source < target)", function () {
-    const data = buildCoAuthorship([paper([A("Zeta", "Zed"), A("Alpha", "Ann")])], 0);
+    const data = buildCoAuthorship(
+      [paper([A("Zeta", "Zed"), A("Alpha", "Ann")])],
+      0,
+    );
     assert.lengthOf(data.edges, 1);
     const e = data.edges[0];
     assert.isTrue(e.source < e.target, "edge endpoints stored in sorted order");
@@ -102,35 +112,52 @@ describe("buildCoAuthorship", function () {
     assert.strictEqual(data.totalAuthors, 0);
   });
 
-  it("cap keeps top-degree authors, drops dangling edges, and truncates", function () {
-    // Hub author H co-authors with three leaves L1,L2,L3 (H appears on 3 papers
-    // -> highest paperCount). A separate isolated pair X-Y on one paper. With a
-    // cap of 4 we expect H + its leaves kept and X/Y dropped, so the X-Y edge is
-    // pruned (no dangling edge survives).
+  it("raises the minimum items until at most `cap` authors remain", function () {
+    // Hub has 3 items, three leaves have 1 each; X and Y share 2 items.
+    // Five authors have 2+ items? No: only Hub, Xeno and Yuki do, so the base
+    // threshold is 1 (fewer than 5 authors with 2+). A cap of 3 then raises it
+    // to 2, which keeps Hub, Xeno and Yuki; Hub has no co-author left, so only
+    // the Xeno-Yuki link is drawn.
     const data = buildCoAuthorship(
       [
-        paper([A("Hub", "Henry"), A("Leaf", "Lara")]), // H + L1
-        paper([A("Hub", "Henry"), A("Mint", "Max")]), // H + L2
-        paper([A("Hub", "Henry"), A("Nile", "Nora")]), // H + L3
-        paper([A("Xeno", "Xander"), A("Yuki", "Yara")]), // isolated pair
+        paper([A("Hub", "Henry"), A("Leaf", "Lara")]),
+        paper([A("Hub", "Henry"), A("Mint", "Max")]),
+        paper([A("Hub", "Henry"), A("Nile", "Nora")]),
+        paper([A("Xeno", "Xander"), A("Yuki", "Yara")]),
+        paper([A("Xeno", "Xander"), A("Yuki", "Yara")]),
       ],
-      4,
+      3,
     );
-    assert.isTrue(data.truncated, "more authors than cap -> truncated");
-    assert.strictEqual(data.totalAuthors, 6, "totalAuthors counts pre-cap");
-    assert.lengthOf(data.nodes, 4, "cap honoured");
+    assert.strictEqual(data.minPapers, 2);
+    assert.strictEqual(data.totalAuthors, 6, "totalAuthors counts everyone");
+    assert.deepEqual(data.nodes.map((n) => n.id).sort(), ["xeno|x", "yuki|y"]);
+    assert.strictEqual(edgeBetween(data.edges, "xeno|x", "yuki|y")!.weight, 2);
+    assert.isTrue(data.truncated);
+  });
 
-    const keptKeys = new Set(data.nodes.map((n) => n.id));
-    assert.isTrue(keptKeys.has("hub|h"), "highest-paperCount hub kept");
+  it("items with very many authors count but add no links", function () {
+    const many = Array.from({ length: 30 }, (_, i) => A("Author" + i, "A"));
+    const data = buildCoAuthorship(
+      [paper(many), paper([A("Doe", "Jane"), A("Roe", "Rita")])],
+      0,
+    );
+    assert.strictEqual(data.largeTeamPapers, 1);
+    assert.deepEqual(data.nodes.map((n) => n.id).sort(), ["doe|j", "roe|r"]);
+  });
 
-    // No edge references a dropped node.
-    for (const e of data.edges) {
-      assert.isTrue(
-        keptKeys.has(e.source) && keptKeys.has(e.target),
-        "no dangling edge to a pruned node",
-      );
-    }
-    // The isolated X-Y pair must not survive once one of them is capped out.
-    assert.isUndefined(edgeBetween(data.edges, "xeno|x", "yuki|y"));
+  it("colours research groups: two separate teams get two groups", function () {
+    const team = (names: string[]) => paper(names.map((n) => A(n, "X")));
+    const records = [
+      team(["Ant", "Bee", "Cat"]),
+      team(["Ant", "Bee", "Cat"]),
+      team(["Dog", "Eel", "Fox"]),
+      team(["Dog", "Eel", "Fox"]),
+    ];
+    const data = buildCoAuthorship(records, 0);
+    assert.lengthOf(data.groups, 2);
+    const g = (id: string) => data.nodes.find((n) => n.id === id)!.group;
+    assert.strictEqual(g("ant|x"), g("cat|x"));
+    assert.notStrictEqual(g("ant|x"), g("dog|x"));
+    assert.isAtLeast(g("ant|x"), 0);
   });
 });

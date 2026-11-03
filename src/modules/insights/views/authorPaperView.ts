@@ -1,148 +1,150 @@
 /**
  * authorPaperView.ts - VizModule id "author-paper".
  *
- * Fetches BipartiteData, converts it to a NetModel (papers + authors as nodes,
- * authorship as edges), and delegates everything to an inner NetworkView.
- * Paper nodes are openable items (kind "item"); author nodes are not.
+ * Answers "which of my items come from the same people?". Shows authors who
+ * appear on several items (repeat authors) and the items they link, with items
+ * coloured by publication year. Clicking an item opens it; clicking an author
+ * highlights their items; double-clicking an author selects them.
  */
 
 import type {
   BipartiteData,
-  ExportResult,
   NetEdge,
   NetModel,
   NetNode,
   VizContext,
-  VizModule,
 } from "../types";
-import { NetworkView } from "../network/NetworkView";
+import { NetworkViewBase, seedByGroup } from "./networkViewBase";
 
 const DEFAULT_CAP = 400;
 
-export class AuthorPaperView implements VizModule {
+/**
+ * The middle of viridis, a colour-blind-safe sequential scale (older = blue,
+ * newer = green). Its darkest and lightest ends are left out so every item
+ * stays visible on both the light and the dark background.
+ */
+const VIRIDIS = ["#3b528b", "#2c728e", "#21918c", "#3fbc73", "#a0da39"];
+
+function yearColor(year: number | null, min: number, max: number): string {
+  if (year === null) return "#9a9a9a";
+  const t = max > min ? (year - min) / (max - min) : 1;
+  const pos = t * (VIRIDIS.length - 1);
+  const i = Math.min(VIRIDIS.length - 2, Math.floor(pos));
+  return mix(VIRIDIS[i]!, VIRIDIS[i + 1]!, pos - i);
+}
+
+function mix(a: string, b: string, t: number): string {
+  const p = (h: string, o: number) => parseInt(h.slice(o, o + 2), 16);
+  const c = [1, 3, 5].map((o) => Math.round(p(a, o) + (p(b, o) - p(a, o)) * t));
+  return "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+
+export class AuthorPaperView extends NetworkViewBase<BipartiteData> {
   readonly id = "author-paper";
   readonly label = "Author / paper";
   readonly icon =
     '<svg viewBox="0 0 16 16" width="16" height="16"><circle cx="4" cy="8" r="2" fill="context-stroke"/><rect x="10" y="3" width="4" height="4" fill="context-stroke"/><rect x="10" y="9" width="4" height="4" fill="context-stroke"/><line x1="4" y1="8" x2="11" y2="5" stroke="context-stroke"/><line x1="4" y1="8" x2="11" y2="11" stroke="context-stroke"/></svg>';
-  readonly kind = "network" as const;
 
-  private inner: NetworkView | null = null;
-  private ctx: VizContext | null = null;
-  private container: HTMLElement | null = null;
+  protected load(ctx: VizContext): Promise<BipartiteData> {
+    return ctx.data.bipartite(ctx.prefs.get<number>("cap", DEFAULT_CAP));
+  }
 
-  async mount(container: HTMLElement, ctx: VizContext): Promise<void> {
-    this.ctx = ctx;
-    this.container = container;
-    const cap = this.cap(ctx);
-    let data: BipartiteData;
-    try {
-      data = await ctx.data.bipartite(cap);
-    } catch (e) {
-      ctx.log("[Bibliometero] bipartite fetch failed", e);
-      ctx.setStatus("Could not load author/paper data.", { warn: true });
-      return;
+  private yearRange(d: BipartiteData): [number, number] {
+    const years = d.papers
+      .map((p) => p.year)
+      .filter((y): y is number => y !== null);
+    return years.length ? [Math.min(...years), Math.max(...years)] : [0, 0];
+  }
+
+  protected toModel(d: BipartiteData): NetModel {
+    const [min, max] = this.yearRange(d);
+    const papers: NetNode[] = d.papers.map((p) => ({
+      id: "i:" + p.id,
+      itemId: p.id,
+      label: p.label,
+      kind: "item",
+      openable: true,
+      weight: 0.4,
+      color: yearColor(p.year, min, max),
+      details: [p.title],
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      fx: null,
+      fy: null,
+    }));
+    const authors: NetNode[] = d.authors.map((a) => ({
+      id: "a:" + a.id,
+      label: a.label,
+      kind: "author",
+      openable: false,
+      weight: Math.max(1, a.paperCount),
+      itemIds: a.itemIds,
+      details: [`${a.paperCount} items in this view`],
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      fx: null,
+      fy: null,
+    }));
+    const nodes = [...authors, ...papers];
+    seedByGroup(nodes, () => 0);
+    const edges: NetEdge[] = d.edges.map((e) => ({
+      source: "i:" + e.paperId,
+      target: "a:" + e.authorId,
+      weight: 1,
+    }));
+    return { nodes, edges, truncated: d.truncated, total: d.totalPapers };
+  }
+
+  protected summary(d: BipartiteData): string {
+    const other = d.totalPapers - d.papers.length;
+    const head = `${d.papers.length} items linked by ${d.authors.length} repeat authors (${d.minPapers}+ items each)`;
+    const rest =
+      other > 0
+        ? ` ${other} items have no repeat author and are not shown.`
+        : "";
+    return `${head}.${rest} Click an item to select it in your library, or an author to highlight their items.`;
+  }
+
+  protected describe(node: NetNode, near: NetNode[]): string {
+    if (node.kind === "author") {
+      return `${node.label}: ${near.length} item${near.length === 1 ? "" : "s"} on this map. Double-click to select them in your library.`;
     }
-    const model = toNetModel(data);
-    this.inner = new NetworkView(this.id, this.label, model);
-    await this.inner.mount(container, ctx);
-    this.report(ctx, data);
+    return `${node.details?.[0] ?? node.label}`;
   }
 
-  destroy(): void {
-    if (this.inner) this.inner.destroy();
-    this.inner = null;
-  }
-
-  onResize(width: number, height: number): void {
-    this.inner?.onResize?.(width, height);
-  }
-
-  onThemeChange(): void {
-    this.inner?.onThemeChange?.();
-  }
-
-  async onDataChange(): Promise<void> {
-    if (!this.ctx || !this.inner) return;
-    const ctx = this.ctx;
-    try {
-      const data = await ctx.data.bipartite(this.cap(ctx));
-      this.inner.setModel(toNetModel(data));
-      this.report(ctx, data);
-    } catch (e) {
-      ctx.log("[Bibliometero] bipartite refresh failed", e);
+  protected legend(d: BipartiteData) {
+    const [min, max] = this.yearRange(d);
+    const entries: Array<{ label: string; color?: string; group?: number }> = [
+      { label: "Author (size: items)", group: 1 },
+    ];
+    if (min && max) {
+      entries.push({
+        label: `Item from ${min}`,
+        color: yearColor(min, min, max),
+      });
+      if (max > min)
+        entries.push({
+          label: `Item from ${max}`,
+          color: yearColor(max, min, max),
+        });
     }
+    return { entries, note: "Item colour: publication year." };
   }
 
-  exportSVG(): Promise<ExportResult> {
-    return this.inner!.exportSVG();
+  protected emptyMessage(d: BipartiteData): string {
+    return d.totalPapers === 0
+      ? "No items in this view."
+      : "No author appears on more than one item here, so there are no shared authors to draw.";
   }
 
-  exportPNG(): Promise<ExportResult> {
-    return this.inner!.exportPNG();
+  protected figureTitle() {
+    return {
+      title: "Items linked by shared authors",
+      name: "bibliometero-author-paper",
+    };
   }
-
-  testHooks(): Record<string, (...args: any[]) => any> {
-    return this.inner ? this.inner.testHooks() : {};
-  }
-
-  private cap(ctx: VizContext): number {
-    return ctx.prefs.get<number>("cap", DEFAULT_CAP);
-  }
-
-  private report(ctx: VizContext, data: BipartiteData): void {
-    const note = data.truncated
-      ? ` (showing the ${data.papers.length} most co-authored of ${data.totalPapers}; switch to a Curated set to see all of yours)`
-      : "";
-    ctx.setStatus(
-      `${data.papers.length} papers · ${data.authors.length} authors · ${data.edges.length} links${note}`,
-      { warn: data.truncated },
-    );
-  }
-}
-
-/** BipartiteData -> NetModel. */
-function toNetModel(data: BipartiteData): NetModel {
-  // Paper degree (edge count) drives radius.
-  const degree = new Map<number, number>();
-  for (const e of data.edges) {
-    degree.set(e.paperId, (degree.get(e.paperId) || 0) + 1);
-  }
-  const paperNodes: NetNode[] = data.papers.map((p) => ({
-    id: "i:" + p.id,
-    itemId: p.id,
-    label: p.label,
-    kind: "item",
-    openable: true,
-    weight: Math.max(1, degree.get(p.id) || 0),
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
-    fx: null,
-    fy: null,
-  }));
-  const authorNodes: NetNode[] = data.authors.map((a) => ({
-    id: "a:" + a.id,
-    label: a.label,
-    kind: "author",
-    openable: false,
-    weight: 1,
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
-    fx: null,
-    fy: null,
-  }));
-  const edges: NetEdge[] = data.edges.map((e) => ({
-    source: "i:" + e.paperId,
-    target: "a:" + e.authorId,
-    weight: 1,
-  }));
-  return {
-    nodes: [...paperNodes, ...authorNodes],
-    edges,
-    truncated: data.truncated,
-    total: data.totalPapers,
-  };
 }

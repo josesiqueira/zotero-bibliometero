@@ -41,29 +41,48 @@ export interface CoAuthorNode {
   label: string;
   paperCount: number;
   degree: number;
+  /** Research group (0 = largest); -1 for authors in groups too small to colour. */
+  group: number;
+  itemIds: number[];
 }
 export interface CoAuthorEdge {
   source: string;
   target: string;
   weight: number; // shared-paper count
 }
+export interface CoAuthorGroup {
+  index: number;
+  /** Named after the member with the most items, e.g. "Floridi, Luciano". */
+  label: string;
+  size: number;
+}
 export interface CoAuthorshipData {
   nodes: CoAuthorNode[];
   edges: CoAuthorEdge[];
-  truncated: boolean;
+  groups: CoAuthorGroup[];
+  /** Authors need at least this many items in scope to be shown. */
+  minPapers: number;
   totalAuthors: number;
+  /** Items whose author list is too long to draw links for (still counted). */
+  largeTeamPapers: number;
+  truncated: boolean;
 }
 
 // 2. Author-to-paper bipartite
 export interface BipartitePaperNode {
   id: number; // real Zotero item id (positive)
   key: string;
+  /** Short label: "Floridi 2021". */
   label: string;
+  title: string;
   itemType: string;
+  year: number | null;
 }
 export interface BipartiteAuthorNode {
   id: string; // "author:" + AuthorKey.key
   label: string;
+  paperCount: number;
+  itemIds: number[];
 }
 export interface BipartiteEdge {
   paperId: number;
@@ -73,6 +92,8 @@ export interface BipartiteData {
   papers: BipartitePaperNode[];
   authors: BipartiteAuthorNode[];
   edges: BipartiteEdge[];
+  /** Authors need at least this many items in scope to be shown. */
+  minPapers: number;
   truncated: boolean;
   totalPapers: number;
 }
@@ -81,6 +102,7 @@ export interface BipartiteData {
 export interface YearBucket {
   year: number | null; // null bucket = unparseable/missing year
   count: number;
+  itemIds: number[]; // the items counted in this bucket (drill-down)
 }
 export interface PublicationsPerYearData {
   buckets: YearBucket[]; // ascending by year; null bucket last
@@ -94,6 +116,7 @@ export interface PublicationsPerYearData {
 export interface SourceEntry {
   name: string;
   count: number;
+  itemIds: number[];
 }
 export interface TopSourcesData {
   entries: SourceEntry[]; // ranked desc, sliced to topN
@@ -106,6 +129,7 @@ export interface AuthorCountEntry {
   key: string;
   label: string;
   count: number;
+  itemIds: number[];
 }
 export interface TopAuthorsData {
   entries: AuthorCountEntry[]; // ranked desc, sliced to topN
@@ -117,11 +141,13 @@ export interface CompositionSegment {
   key: string;
   label: string; // localized for item types
   count: number;
+  itemIds: number[];
 }
 export interface CompositionData {
   byType: CompositionSegment[]; // ranked desc
   byCollection: CompositionSegment[]; // ranked desc (long tail aggregated as "__other")
   uncategorized: number; // items in zero collections
+  uncategorizedIds: number[]; // their ids (drill-down)
   total: number;
 }
 
@@ -138,6 +164,14 @@ export interface NetNode {
   kind: NodeKind;
   openable: boolean; // item nodes: single-click opens
   weight: number; // drives radius (paperCount / degree)
+  /** Colour group (co-authorship research group); -1 or absent = neutral. */
+  group?: number;
+  /** Fixed fill colour (overrides group and kind), e.g. a paper's year colour. */
+  color?: string;
+  /** Item ids behind this node (an author's items), for select-on-double-click. */
+  itemIds?: number[];
+  /** Extra tooltip lines. */
+  details?: string[];
   // layout (filled by the sim)
   x: number;
   y: number;
@@ -205,18 +239,16 @@ export interface VizContext {
   openItem(itemId: number): void;
   /** Select an item in the tree without opening. */
   selectItem(itemId: number): void;
-  /** Optional cross-link: a chart asks the hub to open the co-authorship view for an author. */
-  focusAuthor?(authorKey: string, label: string): void;
   /**
-   * Drill-down: show the matching items in Zotero by running a quick search for
-   * `text` (an author name, a year, a source) in the library. Lets a chart click
-   * take the user to the actual papers.
+   * Drill-down: select exactly these items in the item list (in the library the
+   * panel shows) and report it on the status line. `what` names the selection,
+   * e.g. "published in 2021".
    */
-  searchLibrary?(text: string): void;
-  /** Drill-down: select these items in the library (e.g. all of one item type). */
-  revealItems?(itemIds: number[]): void;
+  showItems?(itemIds: number[], what: string): void;
   /** Drill-down: navigate to a Zotero collection by id. */
   openCollection?(collectionID: number): void;
+  /** What the data is, for captions: "My Library" or "Curated set in My Library". */
+  scopeLabel?(): string;
   /** View-namespaced prefs (backed by `bibliometero.view.<id>.<key>`). */
   prefs: VizPrefs;
   /** Write the shared status line (counts / truncation note). */

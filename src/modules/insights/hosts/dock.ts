@@ -29,8 +29,7 @@ const DEFAULT_HEIGHT = 340;
 const MIN_DOCK = 120;
 const MIN_LIST = 120;
 
-const XUL_NS =
-  "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
 interface DragState {
   pointerId: number;
@@ -157,13 +156,21 @@ export class DockHost implements HostController {
       const handle = htmlEl(doc, "div", "bm-dock-handle");
       handle.id = HANDLE_ID;
       handle.setAttribute("role", "separator");
-      handle.setAttribute("aria-label", "Resize Insights dock");
+      handle.setAttribute("aria-orientation", "horizontal");
+      handle.setAttribute(
+        "aria-label",
+        "Resize the Insights panel (arrow keys)",
+      );
+      handle.setAttribute("tabindex", "0");
       st.handle = handle;
 
       // Dock container (XUL vbox so it lives happily among XUL siblings).
       const dock = xulEl(doc, "vbox", "bm-dock");
       dock.id = DOCK_ID;
-      const height = dockHeightPref();
+      // The saved height may come from a taller window: keep the list usable.
+      const room = (container.clientHeight || 0) - MIN_LIST - 6;
+      const height =
+        room > MIN_DOCK ? Math.min(dockHeightPref(), room) : dockHeightPref();
       dock.style.height = `${height}px`;
       dock.style.minHeight = `${MIN_DOCK}px`;
       st.dock = dock;
@@ -247,6 +254,24 @@ export class DockHost implements HostController {
         handle.setPointerCapture?.(e.pointerId);
         handle.classList.add("bm-dragging");
         e.preventDefault();
+      } catch {
+        /* ignore */
+      }
+    });
+    // Keyboard resizing (ARIA window splitter pattern): arrows move 20 px.
+    handle.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      const containerH = container.getBoundingClientRect().height || 0;
+      const maxH = Math.max(MIN_DOCK, containerH - MIN_LIST);
+      const cur = dock.getBoundingClientRect().height || dockHeightPref();
+      const next = Math.min(
+        maxH,
+        Math.max(MIN_DOCK, cur + (e.key === "ArrowUp" ? 20 : -20)),
+      );
+      dock.style.height = `${Math.round(next)}px`;
+      try {
+        setPrefRaw("insights.dockHeight", Math.round(next));
       } catch {
         /* ignore */
       }

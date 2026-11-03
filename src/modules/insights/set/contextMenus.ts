@@ -29,9 +29,9 @@ const COLLECTION_MENU_ID = "zotero-collectionmenu";
 const ITEM_TOGGLE_ID = "bibliometero-set-toggle";
 const COLLECTION_ADD_ID = "bibliometero-set-collection";
 
-const LABEL_ADD = "Add to Insights";
-const LABEL_REMOVE = "Remove from Insights";
-const LABEL_ADD_COLLECTION = "Add collection to Insights";
+const LABEL_ADD = "Add to Insights curated set";
+const LABEL_REMOVE = "Remove from Insights curated set";
+const LABEL_ADD_COLLECTION = "Add collection to Insights curated set";
 
 type AnyWindow = Window & typeof globalThis & { ZoteroPane?: any };
 
@@ -65,7 +65,9 @@ function getSelectedRegularItems(win: AnyWindow): any[] {
     }
     return items.filter((it) => {
       try {
-        return it && typeof it.isRegularItem === "function" && it.isRegularItem();
+        return (
+          it && typeof it.isRegularItem === "function" && it.isRegularItem()
+        );
       } catch {
         return false;
       }
@@ -191,8 +193,7 @@ function sweepById(doc: Document, id: string): void {
 }
 
 function createMenuItem(doc: Document, id: string, label: string): Element {
-  const ns =
-    "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+  const ns = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
   const item = doc.createElementNS(ns, "menuitem");
   item.setAttribute("id", id);
   item.setAttribute("label", label);

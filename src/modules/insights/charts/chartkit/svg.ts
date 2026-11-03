@@ -90,7 +90,7 @@ export function arcPath(
   startAngle: number,
   endAngle: number,
 ): string {
-  let a0 = startAngle;
+  const a0 = startAngle;
   let a1 = endAngle;
   const full = Math.PI * 2;
   if (a1 - a0 >= full) a1 = a0 + full - 1e-4;

@@ -1,15 +1,16 @@
 /**
- * compositionChart.ts - "composition" VizModule.
+ * compositionChart.ts - "composition" VizModule: what kinds of items the
+ * library holds and how they are filed.
  *
- * Two donut charts side by side: byType and byCollection. Each donut has an SVG
- * ring of arcs (arcPath, innerRadius ~0.6), a centre total, and an HTML legend
- * beside it (renderLegend) with bidirectional hover highlight: hovering an arc
- * highlights the legend row and vice-versa. Hovering an arc also shows a tooltip
- * {label, count, percent}. When the container is narrow the two donut blocks
- * stack vertically (handled in onResize -> render with a layout decision).
+ * - Item types: a donut, because every item has exactly one type, so the
+ *   slices are parts of one whole. Beyond six types the rest fold into
+ *   "Other types". The legend is drawn in SVG so exports keep it.
+ * - Collections: ranked bars, not a donut, because an item can sit in several
+ *   collections; the bars count items per collection and the note says so.
+ *   "Unfiled" (Zotero's word for items in no collection) comes last, muted.
  *
- * Colours come from theme.series (colour-blind-safe); a single-category dataset
- * still renders a full ring without NaN geometry.
+ * Clicking a slice or bar selects exactly those items; a collection bar opens
+ * the collection. One draw() serves the panel and the exported figure.
  */
 
 import type {
@@ -20,26 +21,13 @@ import type {
   CompositionData,
   CompositionSegment,
 } from "../types";
-import { svgEl, svgText, arcPath } from "./chartkit/svg";
-import { colorForKey } from "./chartkit/palette";
+import { svgEl, svgText, arcPath, createPlot, clearSvg } from "./chartkit/svg";
+import { renderRankedBars, type RankedEntry } from "./chartkit/rankedBars";
 import { createTooltip, type Tooltip } from "./chartkit/tooltip";
-import { renderLegend, type Legend, type LegendEntry } from "./chartkit/legend";
-import { serializeSVG, svgToPng } from "./chartkit/exporter";
+import { exportFigure, FONT_FAMILY, longDate } from "./chartkit/figure";
 
-export function createCompositionChart(): VizModule {
-  return new CompositionChart();
-}
-
-interface DonutBlock {
-  wrap: HTMLElement;
-  svg: SVGSVGElement;
-  legend: Legend;
-  segments: CompositionSegment[];
-  arcByKey: Map<string, SVGElement>;
-  title: string;
-}
-
-const NARROW_PX = 560;
+const MAX_TYPES = 6;
+const STACK_BELOW_PX = 640;
 
 export class CompositionChart implements VizModule {
   readonly id = "composition";
@@ -52,40 +40,39 @@ export class CompositionChart implements VizModule {
 
   private ctx: VizContext | null = null;
   private container: HTMLElement | null = null;
-  /** Outer flex row that holds the two donut blocks. */
-  private root: HTMLElement | null = null;
+  private svg: SVGSVGElement | null = null;
   private tooltip: Tooltip | null = null;
   private data: CompositionData | null = null;
-  private blocks: DonutBlock[] = [];
-  /** Single export SVG that composes both donuts (built lazily on export). */
+  private failed = false;
   private width = 700;
   private height = 360;
 
   async mount(container: HTMLElement, ctx: VizContext): Promise<void> {
     this.ctx = ctx;
     this.container = container;
-    container.textContent = "";
     container.style.position = "relative";
     const rect = container.getBoundingClientRect();
     this.width = Math.max(1, Math.floor(rect.width || 700));
     this.height = Math.max(1, Math.floor(rect.height || 360));
-
-    this.root = ctx.doc.createElement("div");
-    this.root.style.display = "flex";
-    this.root.style.width = "100%";
-    this.root.style.height = "100%";
-    this.root.style.boxSizing = "border-box";
-    container.appendChild(this.root);
-
+    this.svg = createPlot(ctx.doc, this.width, this.height);
+    this.svg.setAttribute("font-family", FONT_FAMILY);
+    this.svg.setAttribute("role", "img");
+    container.appendChild(this.svg);
     this.tooltip = createTooltip(ctx.doc, container, ctx.theme());
-
-    try {
-      this.data = await ctx.data.composition();
-    } catch (e) {
-      ctx.log("[composition] fetch failed", e);
-      this.data = null;
-    }
+    await this.load();
     this.render();
+  }
+
+  private async load(): Promise<void> {
+    if (!this.ctx) return;
+    try {
+      this.data = await this.ctx.data.composition();
+      this.failed = false;
+    } catch (e) {
+      this.ctx.log("[composition] fetch failed", e);
+      this.data = null;
+      this.failed = true;
+    }
   }
 
   private hostXY(clientX: number, clientY: number): { x: number; y: number } {
@@ -95,320 +82,331 @@ export class CompositionChart implements VizModule {
       : { x: clientX, y: clientY };
   }
 
-  private clearBlocks(): void {
-    for (const b of this.blocks) {
-      b.legend.destroy();
-    }
-    this.blocks = [];
-    if (this.root) this.root.textContent = "";
-  }
-
   private render(): void {
-    if (!this.root || !this.ctx || !this.tooltip) return;
-    const theme = this.ctx.theme();
-    this.clearBlocks();
-
-    const d = this.data;
-    if (!d || d.total === 0) {
-      this.renderEmpty(theme, "No items to summarize in this scope.");
-      this.updateStatus();
-      return;
-    }
-
-    const narrow = this.width < NARROW_PX;
-    this.root.style.flexDirection = narrow ? "column" : "row";
-    this.root.style.gap = narrow ? "10px" : "16px";
-
-    const blockW = narrow ? this.width : Math.floor((this.width - 16) / 2);
-    const blockH = narrow
-      ? Math.floor((this.height - 10) / 2)
-      : this.height;
-
-    this.buildBlock(
-      "By item type",
-      d.byType,
-      blockW,
-      blockH,
-      d.total,
-      theme,
-    );
-    this.buildBlock(
-      "By collection",
-      d.byCollection,
-      blockW,
-      blockH,
-      d.total,
-      theme,
-      d.uncategorized,
-    );
+    if (!this.svg || !this.ctx) return;
+    clearSvg(this.svg);
+    this.svg.setAttribute("viewBox", `0 0 ${this.width} ${this.height}`);
+    this.draw(this.svg, this.width, this.height, this.ctx.theme(), true);
     this.updateStatus();
   }
 
-  private buildBlock(
-    title: string,
-    rawSegments: CompositionSegment[],
-    blockW: number,
-    blockH: number,
-    grandTotal: number,
-    theme: ThemeInfo,
-    uncategorized?: number,
-  ): void {
-    if (!this.root || !this.ctx || !this.tooltip) return;
-    const doc = this.ctx.doc;
+  /** Item types folded to MAX_TYPES slices. */
+  private typeSlices(d: CompositionData): CompositionSegment[] {
+    if (d.byType.length <= MAX_TYPES) return d.byType;
+    const head = d.byType.slice(0, MAX_TYPES - 1);
+    const tail = d.byType.slice(MAX_TYPES - 1);
+    return [
+      ...head,
+      {
+        key: "__other_types",
+        label: "Other types",
+        count: tail.reduce((n, s) => n + s.count, 0),
+        itemIds: tail.flatMap((s) => s.itemIds),
+      },
+    ];
+  }
 
-    // Optionally fold an "uncategorized" wedge into the collection donut.
-    const segments = rawSegments.slice();
-    if (uncategorized && uncategorized > 0) {
-      segments.push({
-        key: "__uncategorized",
-        label: "Uncategorized",
-        count: uncategorized,
-      });
+  private draw(
+    root: SVGElement,
+    width: number,
+    height: number,
+    theme: ThemeInfo,
+    interactive: boolean,
+  ): void {
+    const doc = root.ownerDocument as Document;
+    const d = this.data;
+    if (!d || d.total === 0) {
+      root.appendChild(
+        svgText(
+          doc,
+          this.failed
+            ? "Could not read the items. Switch views to try again."
+            : "No items in this view.",
+          {
+            x: width / 2,
+            y: height / 2,
+            "text-anchor": "middle",
+            "font-size": 13,
+            fill: theme.muted,
+          },
+        ),
+      );
+      return;
     }
 
-    const wrap = doc.createElement("div");
-    wrap.style.display = "flex";
-    wrap.style.flexDirection = "column";
-    wrap.style.flex = "1 1 0";
-    wrap.style.minWidth = "0";
-    wrap.style.alignItems = "stretch";
+    // Inner margin so headings and bars do not touch the panel edge.
+    const pad = 12;
+    const inner = svgEl(doc, "g", {
+      transform: `translate(${pad}, ${pad / 2})`,
+    });
+    root.appendChild(inner);
+    root = inner;
+    width -= pad * 2;
+    height -= pad;
+    const stacked = width < STACK_BELOW_PX;
+    const gap = 28;
+    const boxW = stacked ? width : Math.floor((width - gap) / 2);
+    const boxH = stacked ? Math.floor((height - gap) / 2) : height;
 
-    const heading = doc.createElement("div");
-    heading.style.fontSize = "12px";
-    heading.style.fontWeight = "600";
-    heading.style.marginBottom = "4px";
-    heading.style.color = theme.fg;
-    heading.textContent = title;
-    wrap.appendChild(heading);
+    const left = svgEl(doc, "g", {});
+    const right = svgEl(doc, "g", {
+      transform: stacked
+        ? `translate(0, ${boxH + gap})`
+        : `translate(${boxW + gap}, 0)`,
+    });
+    root.appendChild(left);
+    root.appendChild(right);
+    this.drawTypes(left, boxW, boxH, theme, interactive, d);
+    this.drawCollections(right, boxW, boxH, theme, interactive, d);
+  }
 
-    const body = doc.createElement("div");
-    body.style.display = "flex";
-    body.style.flex = "1 1 0";
-    body.style.minHeight = "0";
-    body.style.gap = "8px";
-    body.style.alignItems = "center";
-    wrap.appendChild(body);
+  private heading(
+    root: SVGElement,
+    text: string,
+    note: string,
+    theme: ThemeInfo,
+  ): void {
+    const doc = root.ownerDocument as Document;
+    const h = svgText(doc, text, {
+      x: 0,
+      y: 14,
+      "font-size": 13,
+      "font-weight": 600,
+      fill: theme.fg,
+    });
+    root.appendChild(h);
+    if (note) {
+      root.appendChild(
+        svgText(doc, note, { x: 0, y: 31, "font-size": 11, fill: theme.muted }),
+      );
+    }
+  }
 
-    // Donut SVG sized to the smaller of half-block-width / block-height.
-    const donutBox = Math.max(
-      60,
-      Math.min(blockW * 0.5, blockH - 28),
+  private drawTypes(
+    root: SVGElement,
+    w: number,
+    h: number,
+    theme: ThemeInfo,
+    interactive: boolean,
+    d: CompositionData,
+  ): void {
+    const doc = root.ownerDocument as Document;
+    this.heading(root, "Item types", "", theme);
+    const slices = this.typeSlices(d);
+    const top = 26;
+    const size = Math.max(60, Math.min(h - top - 4, w * 0.45, 300));
+    const cx = size / 2;
+    const cy = top + size / 2;
+    const outer = size / 2 - 2;
+    const inner = outer * 0.6;
+    const colors = slices.map((s, i) =>
+      s.key === "__other_types"
+        ? theme.muted
+        : theme.series[i % theme.series.length]!,
     );
-    const svg = svgEl(doc, "svg", {
-      xmlns: "http://www.w3.org/2000/svg",
-      width: donutBox,
-      height: donutBox,
-      viewBox: `0 0 ${donutBox} ${donutBox}`,
-    }) as SVGSVGElement;
-    svg.style.flex = "0 0 auto";
-    body.appendChild(svg);
 
-    const total = segments.reduce((s, x) => s + x.count, 0) || 1;
-    const cx = donutBox / 2;
-    const cy = donutBox / 2;
-    const outerR = donutBox / 2 - 4;
-    const innerR = outerR * 0.6;
+    const arcs: SVGElement[] = [];
+    const rows: SVGElement[] = [];
+    const highlight = (i: number | null) => {
+      arcs.forEach((a, j) =>
+        a.setAttribute("opacity", i === null || i === j ? "1" : "0.35"),
+      );
+      rows.forEach((r, j) =>
+        r.setAttribute("opacity", i === null || i === j ? "1" : "0.45"),
+      );
+    };
 
-    const arcByKey = new Map<string, SVGElement>();
-    const legendEntries: LegendEntry[] = [];
-    let angle = -Math.PI / 2; // start at 12 o'clock
-
-    segments.forEach((seg, i) => {
-      const frac = seg.count / total;
-      const start = angle;
+    let angle = -Math.PI / 2;
+    slices.forEach((s, i) => {
+      const frac = s.count / d.total;
       const end = angle + frac * Math.PI * 2;
-      angle = end;
-      const color = colorForKey(i, theme.series);
-      const percent = frac * 100;
-
-      // Single-category guard: a full ring still needs a valid (clamped) path.
-      const dAttr = arcPath(cx, cy, innerR, outerR, start, end);
       const path = svgEl(doc, "path", {
-        d: dAttr,
-        fill: color,
+        d: arcPath(cx, cy, inner, outer, angle, end),
+        fill: colors[i],
         stroke: theme.bg,
-        "stroke-width": 1,
+        "stroke-width": 1.5,
         class: "bm-arc",
       });
-      const titleEl = svgEl(doc, "title");
-      titleEl.textContent = `${seg.label}: ${seg.count} (${Math.round(
-        percent,
-      )}%)`;
-      path.appendChild(titleEl);
-      arcByKey.set(seg.key, path);
-
-      // Drill-down: collection slice -> open the collection; item-type slice ->
-      // select that type's items in the library.
-      (path as unknown as SVGElement).style.cursor = "pointer";
-      path.addEventListener("click", () => {
-        void this.onArcClick(seg.key);
-      });
-
-      const block = this.findBlockLater();
-      path.addEventListener("pointerenter", (ev) => {
-        this.highlightArc(block, seg.key);
-        const xy = this.hostXY(
-          (ev as PointerEvent).clientX,
-          (ev as PointerEvent).clientY,
-        );
-        this.tooltip!.show(
-          [
-            { text: seg.label, variant: "strong" },
-            { text: `${seg.count} (${Math.round(percent)}%)` },
-          ],
-          xy.x,
-          xy.y,
-        );
-      });
-      path.addEventListener("pointermove", (ev) => {
-        const xy = this.hostXY(
-          (ev as PointerEvent).clientX,
-          (ev as PointerEvent).clientY,
-        );
-        this.tooltip!.show(
-          [
-            { text: seg.label, variant: "strong" },
-            { text: `${seg.count} (${Math.round(percent)}%)` },
-          ],
-          xy.x,
-          xy.y,
-        );
-      });
-      path.addEventListener("pointerleave", () => {
-        this.highlightArc(block, null);
-        this.tooltip!.hide();
-      });
-      svg.appendChild(path);
-
-      legendEntries.push({
-        key: seg.key,
-        label: seg.label,
-        color,
-        count: seg.count,
-        percent,
-      });
+      angle = end;
+      const t = svgEl(doc, "title");
+      t.textContent = `${s.label}: ${s.count} (${pct(s.count, d.total)})`;
+      path.appendChild(t);
+      root.appendChild(path);
+      arcs.push(path);
     });
 
-    // Centre total.
-    svg.appendChild(
-      svgText(doc, String(grandTotal), {
+    root.appendChild(
+      svgText(doc, String(d.total), {
         x: cx,
-        y: cy - 1,
+        y: cy + 2,
         "text-anchor": "middle",
-        "font-size": Math.max(12, Math.round(innerR * 0.5)),
+        "font-size": Math.max(14, Math.round(inner * 0.42)),
         "font-weight": 600,
         fill: theme.fg,
       }),
     );
-    svg.appendChild(
+    root.appendChild(
       svgText(doc, "items", {
         x: cx,
-        y: cy + Math.round(innerR * 0.45),
+        y: cy + 2 + Math.max(12, Math.round(inner * 0.3)),
         "text-anchor": "middle",
-        "font-size": 9,
+        "font-size": 11,
         fill: theme.muted,
       }),
     );
 
-    const legendWrap = doc.createElement("div");
-    legendWrap.style.flex = "1 1 0";
-    legendWrap.style.minWidth = "0";
-    legendWrap.style.maxHeight = "100%";
-    legendWrap.style.overflow = "hidden";
-    body.appendChild(legendWrap);
-
-    // Push the block now so highlightArc closures can resolve it.
-    const blockObj: DonutBlock = {
-      wrap,
-      svg,
-      legend: null as unknown as Legend,
-      segments,
-      arcByKey,
-      title,
-    };
-    this.blocks.push(blockObj);
-
-    const legend = renderLegend(doc, legendEntries, theme, {
-      onHover: (key) => this.highlightArc(blockObj, key),
+    // Legend beside the donut: swatch, name, count and share.
+    const lx = size + 18;
+    const rowH = 20;
+    const ly0 = cy - (slices.length * rowH) / 2 + rowH / 2;
+    slices.forEach((s, i) => {
+      const y = ly0 + i * rowH;
+      const row = svgEl(doc, "g", { class: "bm-legend-row" });
+      row.appendChild(
+        svgEl(doc, "rect", {
+          x: lx,
+          y: y - 6,
+          width: 11,
+          height: 11,
+          rx: 2,
+          fill: colors[i],
+        }),
+      );
+      row.appendChild(
+        svgText(doc, s.label, {
+          x: lx + 18,
+          y: y + 4,
+          "font-size": 12,
+          fill: theme.fg,
+        }),
+      );
+      row.appendChild(
+        svgText(doc, `${s.count}  ${pct(s.count, d.total)}`, {
+          x: Math.min(w, lx + 18 + 210),
+          y: y + 4,
+          "text-anchor": "end",
+          "font-size": 12,
+          fill: theme.muted,
+        }),
+      );
+      root.appendChild(row);
+      rows.push(row);
     });
-    blockObj.legend = legend;
-    legendWrap.appendChild(legend.el);
 
-    this.root.appendChild(wrap);
+    if (!interactive) return;
+    slices.forEach((s, i) => {
+      for (const el of [arcs[i]!, rows[i]!]) {
+        (el as SVGElement).style.cursor = "pointer";
+        el.addEventListener("pointerenter", (ev) => {
+          highlight(i);
+          const pe = ev as PointerEvent;
+          const xy = this.hostXY(pe.clientX, pe.clientY);
+          this.tooltip?.show(
+            [
+              { text: s.label, variant: "strong" },
+              { text: `${s.count} items, ${pct(s.count, d.total)} of all` },
+              { text: "Click to select them" },
+            ],
+            xy.x,
+            xy.y,
+          );
+        });
+        el.addEventListener("pointerleave", () => {
+          highlight(null);
+          this.tooltip?.hide();
+        });
+        el.addEventListener("click", () => {
+          this.ctx?.showItems?.(s.itemIds, `${s.label.toLowerCase()} items`);
+        });
+      }
+    });
   }
 
-  /** Resolve the block being built; the most recently pushed one. */
-  /**
-   * Drill-down when a donut slice is clicked. Collection slices (key "c:<id>")
-   * navigate to that collection; item-type slices select that type's items in
-   * the library. The "Other" aggregate matches no type, so it is a safe no-op.
-   */
-  private async onArcClick(key: string): Promise<void> {
-    if (!this.ctx) return;
-    if (key.startsWith("c:")) {
-      const id = parseInt(key.slice(2), 10);
-      if (Number.isFinite(id)) this.ctx.openCollection?.(id);
+  private drawCollections(
+    root: SVGElement,
+    w: number,
+    h: number,
+    theme: ThemeInfo,
+    interactive: boolean,
+    d: CompositionData,
+  ): void {
+    const doc = root.ownerDocument as Document;
+    this.heading(
+      root,
+      "Top-level collections (with their subcollections)",
+      "An item can be in several collections, so bars can add up to more than the total.",
+      theme,
+    );
+    const entries: RankedEntry[] = d.byCollection.map((s) => ({
+      label: s.label,
+      value: s.count,
+      key: s.key,
+      itemIds: s.itemIds,
+      muted: s.key === "__other",
+    }));
+    if (d.uncategorized > 0) {
+      entries.push({
+        label: "Unfiled",
+        value: d.uncategorized,
+        key: "__unfiled",
+        itemIds: d.uncategorizedIds,
+        muted: true,
+      });
+    }
+    if (!entries.length) {
+      root.appendChild(
+        svgText(doc, "No collections.", {
+          x: 0,
+          y: 60,
+          "font-size": 12,
+          fill: theme.muted,
+        }),
+      );
       return;
     }
-    try {
-      const items = await this.ctx.data.items();
-      const ids = items
-        .filter((it) => {
-          try {
-            return it.itemType === key;
-          } catch {
-            return false;
+    const g = svgEl(doc, "g", { transform: "translate(0, 38)" });
+    root.appendChild(g);
+    renderRankedBars(doc, g, {
+      entries,
+      width: w,
+      height: Math.max(40, h - 38),
+      theme,
+      tooltip: interactive ? this.tooltip || undefined : undefined,
+      toHostXY: (cx, cy) => this.hostXY(cx, cy),
+      detail: (e) => `${pct(e.value, d.total)} of all items`,
+      clickHint: "Click to select these items",
+      onBarClick: interactive
+        ? (e) => {
+            if (e.key.startsWith("c:")) {
+              const id = parseInt(e.key.slice(2), 10);
+              if (Number.isFinite(id)) this.ctx?.openCollection?.(id);
+            } else {
+              this.ctx?.showItems?.(
+                e.itemIds || [],
+                e.key === "__unfiled"
+                  ? "unfiled items"
+                  : "in other collections",
+              );
+            }
           }
-        })
-        .map((it) => it.id);
-      this.ctx.revealItems?.(ids);
-    } catch (e) {
-      this.ctx.log?.("[composition] drill-down failed", e);
-    }
-  }
-
-  private findBlockLater(): DonutBlock {
-    // Closures created during buildBlock reference the block pushed at the end
-    // of that same call; return a thunk-resolved reference via index.
-    const idx = this.blocks.length;
-    const self = this;
-    return new Proxy({} as DonutBlock, {
-      get(_t, prop) {
-        const b = self.blocks[idx];
-        return b ? (b as any)[prop] : undefined;
-      },
+        : undefined,
     });
   }
 
-  private highlightArc(block: DonutBlock, key: string | null): void {
-    if (!block) return;
-    for (const [k, arc] of block.arcByKey) {
-      arc.setAttribute("opacity", key === null || k === key ? "1" : "0.35");
-    }
-    block.legend?.highlight(key);
-  }
-
-  private renderEmpty(theme: ThemeInfo, msg: string): void {
-    if (!this.root || !this.ctx) return;
-    const p = this.ctx.doc.createElement("div");
-    p.style.flex = "1 1 auto";
-    p.style.display = "flex";
-    p.style.alignItems = "center";
-    p.style.justifyContent = "center";
-    p.style.color = theme.muted;
-    p.style.fontSize = "13px";
-    p.textContent = msg;
-    this.root.appendChild(p);
+  private summary(): string {
+    const d = this.data;
+    if (!d) return "";
+    const types = `${d.byType.length} item type${d.byType.length === 1 ? "" : "s"}`;
+    const unfiled = d.uncategorized > 0 ? `, ${d.uncategorized} unfiled` : "";
+    return `${d.total} items, ${types}${unfiled}`;
   }
 
   private updateStatus(): void {
     if (!this.ctx || !this.data) return;
-    const d = this.data;
-    const uncat =
-      d.uncategorized > 0 ? `, ${d.uncategorized} uncategorized` : "";
     this.ctx.setStatus(
-      `${d.total} items, ${d.byType.length} types${uncat}`,
+      `${this.summary()}. Click a slice or bar to select its items.`,
     );
+    this.svg?.setAttribute("aria-label", `Composition: ${this.summary()}`);
   }
 
   onResize(width: number, height: number): void {
@@ -423,114 +421,53 @@ export class CompositionChart implements VizModule {
   }
 
   async onDataChange(): Promise<void> {
-    if (!this.ctx) return;
-    try {
-      this.data = await this.ctx.data.composition();
-    } catch (e) {
-      this.ctx.log("[composition] refetch failed", e);
-    }
+    await this.load();
     this.render();
   }
 
   destroy(): void {
-    this.clearBlocks();
     this.tooltip?.destroy();
     this.tooltip = null;
-    if (this.root) {
-      try {
-        this.root.remove();
-      } catch {
-        /* ignore */
-      }
-    }
-    this.root = null;
-    if (this.container) this.container.textContent = "";
+    this.svg?.remove();
+    this.svg = null;
     this.container = null;
     this.ctx = null;
     this.data = null;
   }
 
-  /**
-   * Compose both donuts into one standalone SVG for export. Builds an offscreen
-   * <svg> laying the two donut groups side by side with their titles.
-   */
-  private buildExportSvg(theme: ThemeInfo): SVGSVGElement {
-    const doc = this.ctx!.doc;
-    const w = this.width;
-    const h = this.height;
-    const svg = svgEl(doc, "svg", {
-      xmlns: "http://www.w3.org/2000/svg",
-      width: w,
-      height: h,
-      viewBox: `0 0 ${w} ${h}`,
-    }) as SVGSVGElement;
-    if (this.blocks.length === 0) {
-      const t = svgText(doc, "No data", {
-        x: w / 2,
-        y: h / 2,
-        "text-anchor": "middle",
-        "font-size": 14,
-        fill: theme.muted,
-      });
-      svg.appendChild(t);
-      return svg;
-    }
-    const n = this.blocks.length;
-    const colW = w / n;
-    this.blocks.forEach((b, i) => {
-      const g = svgEl(doc, "g", {
-        transform: `translate(${i * colW + 10}, 28)`,
-      });
-      const heading = svgText(doc, b.title, {
-        x: 0,
-        y: -10,
-        "font-size": 12,
-        "font-weight": 600,
-        fill: theme.fg,
-      });
-      g.appendChild(heading);
-      // Clone the live donut svg's children (arcs + centre text).
-      const clone = b.svg.cloneNode(true) as SVGSVGElement;
-      const inner = svgEl(doc, "g");
-      while (clone.firstChild) inner.appendChild(clone.firstChild);
-      g.appendChild(inner);
-      svg.appendChild(g);
-    });
-    return svg;
-  }
-
-  async exportSVG(): Promise<ExportResult> {
+  private exportAs(fmt: "svg" | "png"): Promise<ExportResult> {
     if (!this.ctx) throw new Error("chart not mounted");
-    const theme = this.ctx.theme();
-    const composed = this.buildExportSvg(theme);
-    const text = serializeSVG(composed, theme);
-    return { text, suggestedName: "bibliometero-composition", format: "svg" };
-  }
-
-  async exportPNG(): Promise<ExportResult> {
-    if (!this.ctx) throw new Error("chart not mounted");
-    const theme = this.ctx.theme();
-    const composed = this.buildExportSvg(theme);
-    const text = serializeSVG(composed, theme);
-    const blob = await svgToPng(
+    const scope = this.ctx.scopeLabel?.() || "My Library";
+    return exportFigure(
       this.ctx.doc,
-      text,
-      this.width,
-      this.height,
-      2,
-      theme.bg,
+      fmt,
+      {
+        title: "Item types and collections",
+        caption: `${scope}: ${this.summary()}. ${longDate()}. Zotero Bibliometero.`,
+        name: "bibliometero-composition",
+      },
+      (root, w, h, theme) => this.draw(root, w, h, theme, false),
     );
-    return { blob, suggestedName: "bibliometero-composition", format: "png" };
+  }
+
+  exportSVG(): Promise<ExportResult> {
+    return this.exportAs("svg");
+  }
+
+  exportPNG(): Promise<ExportResult> {
+    return this.exportAs("png");
   }
 
   testHooks(): Record<string, (...args: any[]) => any> {
     return {
-      arcCount: () =>
-        this.blocks.reduce(
-          (sum, b) => sum + b.svg.querySelectorAll(".bm-arc").length,
-          0,
-        ),
+      arcCount: () => this.svg?.querySelectorAll(".bm-arc").length ?? 0,
       getTooltipText: () => this.tooltip?.el.textContent ?? "",
     };
   }
+}
+
+function pct(n: number, total: number): string {
+  if (!total) return "0%";
+  const p = (n / total) * 100;
+  return p > 0 && p < 1 ? "<1%" : `${Math.round(p)}%`;
 }

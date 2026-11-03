@@ -1,20 +1,21 @@
 /**
  * NetworkView.ts - reusable canvas network component (a VizModule).
  *
- * Parameterized by a NetModel passed to the constructor. Owns:
- *   - the canvas (devicePixelRatio-correct backing store),
- *   - the ForceSim,
- *   - the InteractionController (pointer state machine),
- *   - a ViewTransform { scale, tx, ty },
- *   - a hover tooltip (DOM overlay),
- *   - a small toolbar built into ctx.controlsSlot (Re-layout / Fit / Release pins).
+ * Parameterized by a NetModel and a few presentation options passed by the
+ * wrapping view (coauthorshipView / authorPaperView). Owns:
+ *   - the canvas (devicePixelRatio-correct backing store) and its draw loop,
+ *   - the ForceSim, run several steps per frame so a layout settles in about a
+ *     second, and kept zoomed to fit while it settles unless the user pans,
+ *     zooms or drags,
+ *   - the InteractionController (pointer state machine: drag to pin, pan,
+ *     wheel zoom, click),
+ *   - a hover tooltip and a legend overlay (DOM),
+ *   - a small toolbar in ctx.controlsSlot (Re-layout / Fit / Release pins),
+ *   - figure export (the same scene drawn into a fixed-size light figure).
  *
- * The wrapping view (coauthorshipView / authorPaperView) converts its dataset
- * into a NetModel and hands it here, so this class never touches Zotero data
- * shapes. It does call ctx.openItem for the one-click-to-paper behaviour.
- *
- * The three quality fixes live in forceSim.ts (#1), interaction.ts (#2) and the
- * click routing below (#3).
+ * Clicks: an openable item node opens the item; any other node highlights
+ * itself and its neighbours (the wrapper explains it on the status line); a
+ * double-click on a node with itemIds selects those items in the library.
  */
 
 import type {
@@ -30,15 +31,44 @@ import {
   CanvasBackend,
   SvgBackend,
   drawScene,
-  nodeRadius,
+  esc,
   styleFromTheme,
   type SceneState,
   type SceneStyle,
-  type SvgBounds,
   type ViewTransform,
 } from "./scene";
+import { svgToPng } from "../charts/chartkit/exporter";
+import {
+  exportTheme,
+  FONT_FAMILY,
+  isoDate,
+  FIGURE_W,
+  FIGURE_H,
+} from "../charts/chartkit/figure";
 
-const FIT_PADDING = 60;
+const FIT_PADDING = 48;
+/** Milliseconds of simulation per frame, and the frame interval. The loop runs
+ * on a timer, not requestAnimationFrame, so a layout still finishes while the
+ * window is hidden or minimized (Firefox pauses animation frames then). */
+const FRAME_BUDGET_MS = 12;
+const FRAME_MS = 16;
+const DOUBLE_CLICK_MS = 450;
+
+export interface LegendEntry {
+  label: string;
+  /** Explicit colour, or a group index resolved against the theme. */
+  color?: string;
+  group?: number;
+}
+
+export interface NetworkOptions {
+  /** A node was selected (clicked) or the selection cleared (null). */
+  onSelect?(node: NetNode | null, neighbours: NetNode[]): void;
+  /** Legend rows (colour meaning) plus one line explaining size and lines. */
+  legend?(): { entries: LegendEntry[]; note: string };
+  /** Figure title and caption for exports. */
+  figure?(): { title: string; caption: string; name: string };
+}
 
 export class NetworkView implements VizModule {
   readonly id: string;
@@ -48,11 +78,13 @@ export class NetworkView implements VizModule {
   readonly kind = "network" as const;
 
   private model: NetModel;
+  private opts: NetworkOptions;
   private ctx: VizContext | null = null;
   private host: HTMLElement | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private cctx: CanvasRenderingContext2D | null = null;
   private tooltip: HTMLElement | null = null;
+  private legendEl: HTMLElement | null = null;
 
   private sim: ForceSim;
   private interaction: InteractionController | null = null;
@@ -61,47 +93,64 @@ export class NetworkView implements VizModule {
 
   private highlight = new Set<string>();
   private hover: string | null = null;
+  private lastClick: { id: string; at: number } | null = null;
 
   private rafHandle = 0;
   private looping = false;
   private destroyed = false;
-  private didFirstFit = false;
+  /** Keep fitting the view while the layout settles, until the user moves it. */
+  private autoFit = true;
   private cssW = 0;
   private cssH = 0;
   private dpr = 1;
-
-  // Bound toolbar buttons (for cleanup).
   private toolbarEl: HTMLElement | null = null;
 
-  constructor(id: string, label: string, model: NetModel) {
+  constructor(
+    id: string,
+    label: string,
+    model: NetModel,
+    opts: NetworkOptions = {},
+  ) {
     this.id = id;
     this.label = label;
     this.model = model;
+    this.opts = opts;
     this.sim = new ForceSim();
     this.tuneForces();
   }
 
-  /**
-   * Scale repulsion / link distance to the graph size. The default charge is far
-   * too weak once a graph has hundreds of nodes and thousands of edges, so the
-   * springs collapse everything into a central hairball. Stronger repulsion (and
-   * slightly weaker gravity) lets dense graphs spread out and fill the viewport.
-   */
+  /** Scale repulsion and link length to the graph size. */
   private tuneForces(): void {
     const n = this.model.nodes.length;
-    const charge = -Math.max(240, Math.round(0.9 * n));
-    const linkDistance = n > 250 ? 64 : n > 80 ? 52 : 44;
-    this.sim.setParams({ charge, linkDistance, gravity: 0.04 });
+    const charge = -Math.max(220, Math.round(1.2 * n));
+    const linkDistance = n > 250 ? 60 : n > 80 ? 52 : 46;
+    this.sim.setParams({ charge, linkDistance, gravity: 0.03 });
   }
 
-  /** Replace the model in place (onDataChange) and re-run layout. */
+  /**
+   * Replace the model (data refresh). Nodes that still exist keep their
+   * position and pin, so the map does not reshuffle when one item changes.
+   */
   setModel(model: NetModel): void {
+    const old = new Map(this.model.nodes.map((n) => [n.id, n]));
+    let kept = 0;
+    for (const n of model.nodes) {
+      const o = old.get(n.id);
+      if (!o) continue;
+      n.x = o.x;
+      n.y = o.y;
+      n.fx = o.fx;
+      n.fy = o.fy;
+      kept++;
+    }
     this.model = model;
     this.highlight.clear();
     this.hover = null;
-    this.didFirstFit = false;
     this.tuneForces();
     this.sim.setGraph(model);
+    if (kept > model.nodes.length * 0.6) this.sim.nudge(0.3);
+    else this.autoFit = true;
+    this.renderLegend();
     this.startLoop();
   }
 
@@ -114,172 +163,204 @@ export class NetworkView implements VizModule {
 
     const host = doc.createElement("div");
     host.className = "bibliometero-network-host";
-    host.style.position = "relative";
-    host.style.width = "100%";
-    host.style.height = "100%";
-    host.style.overflow = "hidden";
-
     const canvas = doc.createElement("canvas");
     canvas.className = "bibliometero-network-canvas";
-    canvas.style.display = "block";
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    canvas.style.touchAction = "none";
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", this.label);
     host.appendChild(canvas);
-
+    const legend = doc.createElement("div");
+    legend.className = "bibliometero-network-legend";
+    host.appendChild(legend);
     const tooltip = doc.createElement("div");
     tooltip.className = "bibliometero-network-tooltip";
-    tooltip.style.position = "absolute";
-    tooltip.style.pointerEvents = "none";
     host.appendChild(tooltip);
-
     container.appendChild(host);
 
     this.host = host;
     this.canvas = canvas;
     this.tooltip = tooltip;
+    this.legendEl = legend;
     const cctx = canvas.getContext("2d") as CanvasRenderingContext2D | null;
     if (!cctx) throw new Error("NetworkView: 2D context unavailable");
     this.cctx = cctx;
-
     this.style = styleFromTheme(ctx.theme());
 
-    // Size the backing store from the host box.
     const w = host.clientWidth || container.clientWidth || 600;
     const h = host.clientHeight || container.clientHeight || 400;
     this.resizeCanvas(w, h);
-    this.sim.setCenter(this.cssW / 2, this.cssH / 2);
+    this.sim.setCenter(0, 0);
     this.sim.setGraph(this.model);
 
     this.buildToolbar(ctx);
     this.attachInteraction();
+    this.renderLegend();
     this.startLoop();
   }
 
   destroy(): void {
     this.destroyed = true;
     this.stopLoop();
-    if (this.interaction) this.interaction.detach();
+    this.interaction?.detach();
     this.interaction = null;
-    if (this.toolbarEl && this.toolbarEl.parentNode) {
-      this.toolbarEl.parentNode.removeChild(this.toolbarEl);
-    }
+    this.toolbarEl?.remove();
     this.toolbarEl = null;
-    if (this.host && this.host.parentNode) {
-      this.host.parentNode.removeChild(this.host);
-    }
+    this.host?.remove();
     this.host = null;
     this.canvas = null;
     this.cctx = null;
     this.tooltip = null;
+    this.legendEl = null;
   }
 
   onResize(width: number, height: number): void {
     if (this.destroyed || !this.canvas) return;
+    const wasFit = this.autoFit || this.sim.settled;
     this.resizeCanvas(width, height);
-    this.sim.setCenter(this.cssW / 2, this.cssH / 2);
-    // Do NOT reheat on resize; just redraw at the new size.
+    if (wasFit && this.autoFit) this.fit();
     this.requestDraw();
   }
 
   onThemeChange(): void {
     if (this.destroyed || !this.ctx) return;
     this.style = styleFromTheme(this.ctx.theme());
+    this.renderLegend();
     this.requestDraw();
   }
 
   onDataChange(): void {
-    // The wrapping view re-fetches and calls setModel(); nothing to do here.
+    // The wrapping view re-fetches and calls setModel().
   }
 
-  async exportPNG(): Promise<ExportResult> {
-    const bounds = this.fitBounds();
-    const scale = 2;
-    const doc = this.ctx?.doc || (this.canvas && this.canvas.ownerDocument);
-    const off = doc
-      ? (doc.createElement("canvas") as HTMLCanvasElement)
-      : (null as unknown as HTMLCanvasElement);
-    const pad = FIT_PADDING;
-    const outW = Math.max(1, Math.round((bounds.width + pad * 2) * scale));
-    const outH = Math.max(1, Math.round((bounds.height + pad * 2) * scale));
-    off.width = outW;
-    off.height = outH;
-    const octx = off.getContext("2d") as CanvasRenderingContext2D | null;
-    const style = this.style || styleFromTheme(this.ctx!.theme());
-    if (octx) {
-      // World transform that maps fit-bounds (+padding) to the offscreen canvas.
-      const view: ViewTransform = {
-        scale,
-        tx: (-bounds.minX + pad) * scale,
-        ty: (-bounds.minY + pad) * scale,
-      };
-      const backend = new CanvasBackend(octx, 1);
-      const state: SceneState = {
-        highlight: new Set(),
-        hover: null,
-        showLabels: true,
-        cssW: outW,
-        cssH: outH,
-      };
-      drawScene(this.model, view, style, state, backend);
-    }
-    const blob = await new Promise<Blob | null>((resolve) => {
-      try {
-        off.toBlob((b) => resolve(b), "image/png");
-      } catch {
-        resolve(null);
-      }
-    });
-    return {
-      blob: blob || undefined,
-      suggestedName: `bibliometero-${this.id}`,
-      format: "png",
-    };
-  }
+  // ---- Export: the same scene, as a light figure with title and legend -----
 
-  async exportSVG(): Promise<ExportResult> {
-    const inner = this.fitBounds();
-    const pad = FIT_PADDING;
-    const bounds: SvgBounds = {
-      minX: inner.minX - pad,
-      minY: inner.minY - pad,
-      width: inner.width + pad * 2,
-      height: inner.height + pad * 2,
+  private figureSvg(): string {
+    const theme = exportTheme();
+    const style = styleFromTheme(theme);
+    const fig = this.opts.figure?.() ?? {
+      title: this.label,
+      caption: "",
+      name: `bibliometero-${this.id}`,
     };
-    const style = this.style || styleFromTheme(this.ctx!.theme());
-    const backend = new SvgBackend(bounds);
-    // Identity world view: SVG emits world coords directly with a viewBox.
-    const view: ViewTransform = { scale: 1, tx: 0, ty: 0 };
+    const legend = this.opts.legend?.();
+    const legendW = legend && legend.entries.length ? 240 : 0;
+    const top = 68;
+    const bottom = 48;
+    const boxX = 24;
+    const boxW = FIGURE_W - 48 - legendW;
+    const boxH = FIGURE_H - top - bottom;
+
+    const b = this.fitBounds();
+    const scale = Math.min(4, (boxW - 90) / b.width, (boxH - 60) / b.height);
+    const view: ViewTransform = {
+      scale,
+      tx: boxX + boxW / 2 - (b.minX + b.width / 2) * scale,
+      ty: top + boxH / 2 - (b.minY + b.height / 2) * scale,
+    };
+    const backend = new SvgBackend();
     const state: SceneState = {
       highlight: new Set(),
       hover: null,
       showLabels: true,
-      cssW: bounds.width,
-      cssH: bounds.height,
+      cssW: boxX + boxW,
+      cssH: top + boxH,
     };
     drawScene(this.model, view, style, state, backend);
+
+    const parts: string[] = [];
+    parts.push(
+      `<rect x="0" y="0" width="${FIGURE_W}" height="${FIGURE_H}" fill="${theme.bg}"/>`,
+    );
+    parts.push(
+      `<text x="32" y="44" font-size="22" font-weight="600" fill="${theme.fg}">${esc(fig.title)}</text>`,
+    );
+    parts.push(backend.markup());
+    if (legend && legend.entries.length) {
+      const lx = FIGURE_W - 24 - legendW + 12;
+      let y = top + 10;
+      for (const e of legend.entries) {
+        const color =
+          e.color ??
+          (typeof e.group === "number" && e.group >= 0
+            ? style.groups[e.group % style.groups.length] || style.neutral
+            : style.neutral);
+        parts.push(`<circle cx="${lx + 6}" cy="${y}" r="6" fill="${color}"/>`);
+        parts.push(
+          `<text x="${lx + 18}" y="${y + 4}" font-size="13" fill="${theme.fg}">${esc(e.label)}</text>`,
+        );
+        y += 22;
+      }
+      parts.push(
+        `<text x="${lx}" y="${y + 10}" font-size="12" fill="${theme.muted}">${esc(legend.note)}</text>`,
+      );
+    }
+    parts.push(
+      `<text x="32" y="${FIGURE_H - 22}" font-size="13" fill="${theme.muted}">${esc(fig.caption)}</text>`,
+    );
+    return (
+      `<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${FIGURE_W}" height="${FIGURE_H}" ` +
+      `viewBox="0 0 ${FIGURE_W} ${FIGURE_H}" font-family="${esc(FONT_FAMILY)}">\n` +
+      parts.join("\n") +
+      `\n</svg>\n`
+    );
+  }
+
+  private figureName(): string {
+    const name = this.opts.figure?.().name ?? `bibliometero-${this.id}`;
+    return `${name}-${isoDate()}`;
+  }
+
+  async exportSVG(): Promise<ExportResult> {
     return {
-      text: backend.serialize(),
-      suggestedName: `bibliometero-${this.id}`,
+      text: this.figureSvg(),
+      suggestedName: this.figureName(),
       format: "svg",
     };
   }
 
+  async exportPNG(): Promise<ExportResult> {
+    const doc = this.ctx?.doc || this.canvas?.ownerDocument;
+    if (!doc) throw new Error("network not mounted");
+    const blob = await svgToPng(
+      doc,
+      this.figureSvg(),
+      FIGURE_W,
+      FIGURE_H,
+      2,
+      "#ffffff",
+    );
+    return { blob, suggestedName: this.figureName(), format: "png" };
+  }
+
   testHooks(): Record<string, (...args: any[]) => any> {
     return {
-      getNodePositions: () => {
-        const out: Record<string, { x: number; y: number; fx: number | null; fy: number | null }> = {};
-        for (const n of this.model.nodes) {
-          out[n.id] = { x: n.x, y: n.y, fx: n.fx, fy: n.fy };
-        }
-        return out;
-      },
+      // Positions in canvas CSS pixels (what dispatchPointer takes), so the
+      // live harness can point at a node and compare drag tracking directly.
+      getNodePositions: () =>
+        this.model.nodes.map((n) => ({
+          id: n.id,
+          kind: n.kind,
+          itemId: n.itemId,
+          x: n.x * this.view.scale + this.view.tx,
+          y: n.y * this.view.scale + this.view.ty,
+        })),
       isSettled: () => this.sim.settled,
-      getView: () => ({ scale: this.view.scale, tx: this.view.tx, ty: this.view.ty }),
-      dispatchPointer: (type: "down" | "move" | "up" | "cancel", x: number, y: number) => {
+      getView: () => ({
+        scale: this.view.scale,
+        tx: this.view.tx,
+        ty: this.view.ty,
+      }),
+      dispatchPointer: (
+        type: "down" | "move" | "up" | "cancel",
+        x: number,
+        y: number,
+      ) => {
         if (this.interaction) this.interaction.dispatch(type, x, y);
       },
-      getTooltipText: () => (this.tooltip ? this.tooltip.textContent || "" : ""),
+      getTooltipText: () =>
+        this.tooltip ? this.tooltip.textContent || "" : "",
+      getLegendText: () =>
+        this.legendEl ? this.legendEl.textContent || "" : "",
     };
   }
 
@@ -307,35 +388,35 @@ export class NetworkView implements VizModule {
         this.looping = false;
         return;
       }
-      const running = this.sim.tick();
+      // Several simulation steps per frame, within a time budget.
+      const start = Date.now();
+      let running = true;
+      do {
+        running = this.sim.tick();
+      } while (running && Date.now() - start < FRAME_BUDGET_MS);
+      if (this.autoFit) this.fit();
       this.draw();
-      // Fit once, the first time the layout settles.
-      if (!running && !this.didFirstFit) {
-        this.didFirstFit = true;
-        this.fit();
-        this.draw();
-      }
       if (running) {
-        this.rafHandle = win.requestAnimationFrame(step);
+        this.rafHandle = win.setTimeout(step, FRAME_MS);
       } else {
-        // Settled: STOP the rAF loop (quality fix #1). Positions are frozen.
+        // Settled: stop the loop; positions stay frozen until the next drag.
         this.looping = false;
         this.rafHandle = 0;
       }
     };
-    this.rafHandle = win.requestAnimationFrame(step);
+    this.rafHandle = win.setTimeout(step, 0);
   }
 
   private stopLoop(): void {
     const win = this.canvas?.ownerDocument?.defaultView;
-    if (this.rafHandle && win) win.cancelAnimationFrame(this.rafHandle);
+    if (this.rafHandle && win) win.clearTimeout(this.rafHandle);
     this.rafHandle = 0;
     this.looping = false;
   }
 
-  /** Draw one frame; if the loop is stopped, also schedules a single frame. */
+  /** Draw one frame; if the loop is stopped, schedule a single frame. */
   private requestDraw(): void {
-    if (this.looping) return; // the loop already redraws every frame
+    if (this.looping) return;
     const win = this.canvas?.ownerDocument?.defaultView;
     if (!win) {
       this.draw();
@@ -361,21 +442,24 @@ export class NetworkView implements VizModule {
 
   // ---- Fit / bounds ---------------------------------------------------
 
-  private fitBounds(): { minX: number; minY: number; width: number; height: number } {
+  private fitBounds(): {
+    minX: number;
+    minY: number;
+    width: number;
+    height: number;
+  } {
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
+    // Node discs and labels are screen-sized; the fit padding leaves room.
     for (const n of this.model.nodes) {
-      const r = nodeRadius(n);
-      if (n.x - r < minX) minX = n.x - r;
-      if (n.y - r < minY) minY = n.y - r;
-      if (n.x + r > maxX) maxX = n.x + r;
-      if (n.y + r > maxY) maxY = n.y + r;
+      if (n.x < minX) minX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y > maxY) maxY = n.y;
     }
-    if (!isFinite(minX)) {
-      return { minX: 0, minY: 0, width: this.cssW || 1, height: this.cssH || 1 };
-    }
+    if (!isFinite(minX)) return { minX: 0, minY: 0, width: 1, height: 1 };
     return {
       minX,
       minY,
@@ -384,52 +468,89 @@ export class NetworkView implements VizModule {
     };
   }
 
-  /** Zoom-to-bounds (toolbar Fit + first-settle). */
+  /** Zoom to show the whole graph (toolbar Fit, and while the layout settles). */
   private fit(): void {
     const b = this.fitBounds();
     const vw = this.cssW;
     const vh = this.cssH;
     const scale = Math.min(
-      4,
-      Math.max(0.1, Math.min((vw - FIT_PADDING) / b.width, (vh - FIT_PADDING) / b.height)),
+      2.5,
+      Math.max(
+        0.05,
+        Math.min(
+          (vw - FIT_PADDING * 2) / b.width,
+          (vh - FIT_PADDING * 2) / b.height,
+        ),
+      ),
     );
-    const cx = b.minX + b.width / 2;
-    const cy = b.minY + b.height / 2;
-    this.view = { scale, tx: vw / 2 - cx * scale, ty: vh / 2 - cy * scale };
+    this.view = {
+      scale,
+      tx: vw / 2 - (b.minX + b.width / 2) * scale,
+      ty: vh / 2 - (b.minY + b.height / 2) * scale,
+    };
   }
 
-  // ---- Toolbar --------------------------------------------------------
+  // ---- Legend + toolbar ----------------------------------------------
+
+  private renderLegend(): void {
+    const el = this.legendEl;
+    if (!el || !this.ctx || !this.style) return;
+    el.textContent = "";
+    const legend = this.opts.legend?.();
+    if (!legend) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    const doc = this.ctx.doc;
+    for (const e of legend.entries) {
+      const row = doc.createElement("div");
+      row.className = "bm-legend-row";
+      const dot = doc.createElement("span");
+      dot.className = "bm-legend-dot";
+      dot.style.background =
+        e.color ??
+        (typeof e.group === "number" && e.group >= 0
+          ? this.style.groups[e.group % this.style.groups.length] ||
+            this.style.neutral
+          : this.style.neutral);
+      row.appendChild(dot);
+      row.appendChild(doc.createTextNode(e.label));
+      el.appendChild(row);
+    }
+    const note = doc.createElement("div");
+    note.className = "bm-legend-note";
+    note.textContent = legend.note;
+    el.appendChild(note);
+  }
 
   private buildToolbar(ctx: VizContext): void {
     const doc = ctx.doc;
     const bar = doc.createElement("div");
     bar.className = "bibliometero-network-toolbar";
-
     const mk = (label: string, title: string, onClick: () => void) => {
       const btn = doc.createElement("button");
       btn.type = "button";
-      btn.className = "bibliometero-network-btn";
+      btn.className = "bm-hub-btn";
       btn.textContent = label;
       btn.title = title;
       btn.addEventListener("click", onClick);
       bar.appendChild(btn);
-      return btn;
     };
-
-    mk("Re-layout", "Reheat the force layout", () => {
-      this.sim.reheat();
-      this.startLoop();
-    });
-    mk("Fit", "Zoom to fit all nodes", () => {
+    mk("Fit", "Zoom to show the whole map", () => {
       this.fit();
       this.requestDraw();
     });
-    mk("Release pins", "Unpin all dragged nodes", () => {
-      this.sim.releaseAll();
+    mk("Re-layout", "Lay the map out again from the current positions", () => {
+      this.autoFit = true;
       this.sim.reheat();
       this.startLoop();
     });
-
+    mk("Release pins", "Let nodes you dragged move freely again", () => {
+      this.sim.releaseAll();
+      this.sim.nudge(0.4);
+      this.startLoop();
+    });
     ctx.controlsSlot.appendChild(bar);
     this.toolbarEl = bar;
   }
@@ -447,12 +568,14 @@ export class NetworkView implements VizModule {
       },
       pinNode: (id, wx, wy) => this.sim.pin(id, wx, wy),
       nudgeSim: () => {
-        // Quality fix #1: drag-start does a single small bump, never reheat.
+        // Drag start: one small bump so neighbours relax; never a full reheat.
+        this.autoFit = false;
         this.sim.nudge(0.3);
         this.startLoop();
       },
       requestDraw: () => this.requestDraw(),
       onPan: (tx, ty) => {
+        this.autoFit = false;
         this.view.tx = tx;
         this.view.ty = ty;
       },
@@ -460,6 +583,7 @@ export class NetworkView implements VizModule {
       onBackgroundClick: () => {
         if (this.highlight.size) {
           this.highlight.clear();
+          this.opts.onSelect?.(null, []);
           this.requestDraw();
         }
       },
@@ -469,19 +593,41 @@ export class NetworkView implements VizModule {
     this.interaction.attach();
   }
 
-  /** Quality fix #3: one click opens an item; author clicks highlight. */
+  private neighbours(node: NetNode): NetNode[] {
+    const ids = new Set<string>();
+    for (const e of this.model.edges) {
+      if (e.source === node.id) ids.add(e.target);
+      else if (e.target === node.id) ids.add(e.source);
+    }
+    return this.model.nodes.filter((n) => ids.has(n.id));
+  }
+
   private onNodeClick(node: NetNode): void {
-    if (node.kind === "item" && node.openable && typeof node.itemId === "number") {
-      this.ctx?.openItem(node.itemId);
+    const now = Date.now();
+    const isDouble =
+      this.lastClick &&
+      this.lastClick.id === node.id &&
+      now - this.lastClick.at < DOUBLE_CLICK_MS;
+    this.lastClick = { id: node.id, at: now };
+
+    if (
+      node.kind === "item" &&
+      node.openable &&
+      typeof node.itemId === "number"
+    ) {
+      // One click selects the item in the list (visible above the dock); a
+      // double-click opens it.
+      if (isDouble) this.ctx?.openItem(node.itemId);
+      else this.ctx?.selectItem(node.itemId);
       return;
     }
-    // Author / non-openable node: highlight it + its incident neighbours.
-    const hi = new Set<string>([node.id]);
-    for (const e of this.model.edges) {
-      if (e.source === node.id) hi.add(e.target);
-      else if (e.target === node.id) hi.add(e.source);
+    if (isDouble && node.itemIds?.length) {
+      this.ctx?.showItems?.(node.itemIds, `by ${node.label}`);
+      return;
     }
-    this.highlight = hi;
+    const near = this.neighbours(node);
+    this.highlight = new Set<string>([node.id, ...near.map((n) => n.id)]);
+    this.opts.onSelect?.(node, near);
     this.requestDraw();
   }
 
@@ -495,46 +641,51 @@ export class NetworkView implements VizModule {
     if (node) {
       const openable = node.kind === "item" && node.openable;
       this.canvas.style.cursor = openable ? "pointer" : "default";
-      this.showTooltip(this.tooltipFor(node), x, y);
+      this.showTooltip(this.tooltipLines(node), x, y);
     } else {
-      this.canvas.style.cursor = "default";
+      this.canvas.style.cursor = "";
       this.hideTooltip();
     }
   }
 
-  private tooltipFor(node: NetNode): string {
-    if (node.kind === "item" && node.openable) {
-      return `${node.label}\nClick to open · drag to pin`;
-    }
-    const papers = Math.max(0, Math.round(node.weight));
-    return `${node.label} · ${papers} paper${papers === 1 ? "" : "s"} · click to highlight`;
+  private tooltipLines(node: NetNode): string[] {
+    const lines = [node.label, ...(node.details || [])];
+    if (node.kind === "item" && node.openable)
+      lines.push("Click to select, double-click to open");
+    else if (node.itemIds?.length)
+      lines.push("Click to highlight, double-click to select items");
+    return lines;
   }
 
-  private showTooltip(text: string, x: number, y: number): void {
+  private showTooltip(lines: string[], x: number, y: number): void {
     if (!this.tooltip || !this.ctx) return;
     this.tooltip.textContent = "";
-    const lines = text.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      const line = this.ctx.doc.createElement("div");
-      if (i > 0) line.className = "bibliometero-tip-sub";
-      line.textContent = lines[i];
-      this.tooltip.appendChild(line);
-    }
+    lines.forEach((text, i) => {
+      const line = this.ctx!.doc.createElement("div");
+      line.className = i === 0 ? "bm-tip-title" : "bm-tip-sub";
+      line.textContent = text;
+      this.tooltip!.appendChild(line);
+    });
     this.tooltip.classList.add("bibliometero-show");
     const hostW = this.host?.clientWidth || 0;
+    const hostH = this.host?.clientHeight || 0;
     const tipW = this.tooltip.offsetWidth || 0;
+    const tipH = this.tooltip.offsetHeight || 0;
     let left = x + 14;
     if (left + tipW > hostW) left = Math.max(4, x - tipW - 14);
+    let top = y + 14;
+    if (top + tipH > hostH) top = Math.max(4, y - tipH - 10);
     this.tooltip.style.left = `${left}px`;
-    this.tooltip.style.top = `${y + 14}px`;
+    this.tooltip.style.top = `${top}px`;
   }
 
   private hideTooltip(): void {
-    if (this.tooltip) this.tooltip.classList.remove("bibliometero-show");
+    this.tooltip?.classList.remove("bibliometero-show");
   }
 
   private onZoom(factor: number, x: number, y: number): void {
-    const newScale = Math.min(6, Math.max(0.08, this.view.scale * factor));
+    this.autoFit = false;
+    const newScale = Math.min(6, Math.max(0.05, this.view.scale * factor));
     const wx = (x - this.view.tx) / this.view.scale;
     const wy = (y - this.view.ty) / this.view.scale;
     this.view.scale = newScale;

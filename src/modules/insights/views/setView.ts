@@ -23,7 +23,7 @@ export function createSetView(): VizModule {
 
 export class SetView implements VizModule {
   readonly id = "set";
-  readonly label = "Set";
+  readonly label = "Curated set";
   readonly kind = "manage" as const;
   readonly icon =
     '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">' +
@@ -167,7 +167,7 @@ export class SetView implements VizModule {
 
     if (rows.length === 0) {
       root.appendChild(this.buildEmpty(doc, theme));
-      this.ctx.setStatus("0 papers in the set");
+      this.ctx.setStatus("The curated set is empty.");
       return;
     }
 
@@ -183,7 +183,7 @@ export class SetView implements VizModule {
     root.appendChild(listWrap);
 
     this.ctx.setStatus(
-      `${rows.length} paper${rows.length === 1 ? "" : "s"} in the set`,
+      `${rows.length} item${rows.length === 1 ? "" : "s"} in the curated set. Switch to Curated set in the header to see them in every view.`,
     );
   }
 
@@ -202,7 +202,7 @@ export class SetView implements VizModule {
     header.style.flex = "0 0 auto";
 
     const label = doc.createElement("span");
-    label.textContent = `${count} paper${count === 1 ? "" : "s"} in the set`;
+    label.textContent = `${count} item${count === 1 ? "" : "s"} in the curated set`;
     label.style.fontSize = "13px";
     label.style.fontWeight = "600";
     label.style.color = theme.fg;
@@ -221,6 +221,10 @@ export class SetView implements VizModule {
     if (count === 0) clearBtn.style.opacity = "0.5";
     clearBtn.addEventListener("click", () => {
       if (count === 0) return;
+      const ok = (this.ctx?.win as any)?.confirm?.(
+        `Remove all ${count} items from the curated set? Your library itself is not changed.`,
+      );
+      if (!ok) return;
       try {
         insightsSet.clear(libraryID);
       } catch (e) {
@@ -246,7 +250,7 @@ export class SetView implements VizModule {
     empty.style.gap = "8px";
 
     const title = doc.createElement("div");
-    title.textContent = "The Insights set is empty.";
+    title.textContent = "Your curated set is empty.";
     title.style.fontSize = "14px";
     title.style.fontWeight = "600";
     title.style.color = theme.fg;
@@ -254,8 +258,9 @@ export class SetView implements VizModule {
 
     const hint = doc.createElement("div");
     hint.textContent =
-      "Right-click papers in your library and choose Add to Insights, " +
-      "or right-click a collection and choose Add collection to Insights.";
+      "A curated set is a hand-picked group of items that every view can focus on. " +
+      "Select items in your library and click Add current selection, or right-click " +
+      "items or a collection and choose Add to Insights curated set.";
     hint.style.fontSize = "12px";
     hint.style.lineHeight = "1.5";
     hint.style.maxWidth = "360px";
@@ -279,7 +284,7 @@ export class SetView implements VizModule {
     row.style.padding = "6px 10px";
     row.style.borderBottom = `1px solid ${theme.border}`;
     row.style.cursor = "default";
-    row.title = "Double-click to reveal in the library";
+    row.title = "Double-click to select it in the item list";
 
     row.addEventListener("mouseenter", () => {
       row.style.background = theme.grid;
@@ -289,9 +294,9 @@ export class SetView implements VizModule {
     });
     row.addEventListener("dblclick", () => {
       try {
-        this.ctx?.openItem(id);
+        this.ctx?.selectItem(id);
       } catch (e) {
-        this.ctx?.log("[set] openItem failed", e);
+        this.ctx?.log("[set] selectItem failed", e);
       }
     });
 
@@ -420,7 +425,10 @@ export class SetView implements VizModule {
       ids = [];
     }
     if (ids.length === 0) {
-      this.ctx?.setStatus("No regular items selected to add.", { warn: true });
+      this.ctx?.setStatus(
+        "Select one or more items in the item list first, then click Add current selection.",
+        { warn: true },
+      );
       return;
     }
     try {

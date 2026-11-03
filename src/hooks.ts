@@ -24,6 +24,19 @@ async function onStartup() {
   // register() also calls registerViews() to populate the view registry.
   await InsightsHub.register();
 
+  // Settings pane (Zotero Settings, Bibliometero). Zotero removes it on
+  // shutdown together with the plugin.
+  try {
+    await Zotero.PreferencePanes.register({
+      pluginID: addon.data.config.addonID,
+      src: rootURI + "content/preferences.xhtml",
+      label: "Bibliometero",
+      image: `chrome://${addon.data.config.addonRef}/content/icons/favicon.png`,
+    });
+  } catch (e) {
+    ztoolkit.log("[Bibliometero] settings pane registration failed", e);
+  }
+
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );

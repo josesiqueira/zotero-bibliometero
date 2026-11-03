@@ -6,9 +6,9 @@ import type { ItemRecord } from "../src/modules/insights/data/extract.ts";
  * Author<->paper bipartite graph (buildBipartite).
  *
  * One node per paper, one per normalized author ("author:" + key); every edge is
- * paper -> author. A shared author connects multiple papers (its incident edge
- * count rises). A paper with zero usable creators contributes an isolated paper
- * node. Empty input yields an empty graph.
+ * paper -> author. Items appear only through a shown author, so a paper with
+ * no usable creators is not drawn. In a larger scope only repeat authors (2+
+ * items) are shown. Empty input yields an empty graph.
  */
 
 function paper(
@@ -53,18 +53,49 @@ describe("buildBipartite", function () {
     const authorIds = new Set(data.authors.map((a) => a.id));
     assert.isAbove(data.edges.length, 0);
     for (const e of data.edges) {
-      assert.isTrue(paperIds.has(e.paperId), "edge paperId references a paper node");
-      assert.isTrue(authorIds.has(e.authorId), "edge authorId references an author node");
+      assert.isTrue(
+        paperIds.has(e.paperId),
+        "edge paperId references a paper node",
+      );
+      assert.isTrue(
+        authorIds.has(e.authorId),
+        "edge authorId references an author node",
+      );
       assert.match(e.authorId, /^author:/, "author ids are namespaced");
     }
   });
 
-  it("a paper with 0 creators is an isolated paper node", function () {
+  it("a paper with no creators is not drawn", function () {
     const data = buildBipartite([paper(3, [])], 0);
-    assert.lengthOf(data.papers, 1);
+    assert.lengthOf(data.papers, 0);
     assert.lengthOf(data.authors, 0);
-    assert.lengthOf(data.edges, 0, "no authorship -> no edges, node is isolated");
-    assert.strictEqual(data.papers[0].id, 3);
+    assert.strictEqual(data.totalPapers, 1);
+  });
+
+  it("with enough repeat authors, one-item authors are left out", function () {
+    // Five repeat authors (2 items each) plus two one-item authors.
+    const rs = [
+      paper(1, [A("Ant", "A"), A("Bee", "B"), A("Solo", "S")]),
+      paper(2, [A("Ant", "A"), A("Cat", "C")]),
+      paper(3, [A("Bee", "B"), A("Dog", "D")]),
+      paper(4, [A("Cat", "C"), A("Eel", "E")]),
+      paper(5, [A("Dog", "D"), A("Eel", "E")]),
+      paper(6, [A("Lone", "L")]),
+    ];
+    const data = buildBipartite(rs, 0);
+    assert.strictEqual(data.minPapers, 2);
+    assert.deepEqual(data.authors.map((a) => a.label).sort(), [
+      "Ant, A.",
+      "Bee, B.",
+      "Cat, C.",
+      "Dog, D.",
+      "Eel, E.",
+    ]);
+    assert.deepEqual(
+      data.papers.map((p) => p.id),
+      [1, 2, 3, 4, 5],
+      "item 6 has no repeat author",
+    );
   });
 
   it("empty input -> empty graph", function () {

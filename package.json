@@ -29,7 +29,8 @@
     "test": "zotero-plugin test",
     "update-deps": "npm update --save",
     "docs": "node scripts/docs.mjs",
-    "docs:check": "node scripts/docs.mjs --check"
+    "docs:check": "node scripts/docs.mjs --check",
+    "test:unit": "esbuild test/*.test.ts --bundle --platform=node --format=esm --outdir=.scaffold/unit --out-extension:.js=.mjs --external:chai --log-level=warning && mocha \".scaffold/unit/*.mjs\""
   },
   "dependencies": {
     "zotero-plugin-toolkit": "^5.1.0-beta.13"

@@ -29,7 +29,14 @@ function rec(source: string): ItemRecord {
 describe("buildTopSources", function () {
   it("ranks sources by count descending", function () {
     const data = buildTopSources(
-      [rec("Nature"), rec("Nature"), rec("Nature"), rec("Science"), rec("Science"), rec("Cell")],
+      [
+        rec("Nature"),
+        rec("Nature"),
+        rec("Nature"),
+        rec("Science"),
+        rec("Science"),
+        rec("Cell"),
+      ],
       0,
     );
     assert.deepEqual(
@@ -57,7 +64,10 @@ describe("buildTopSources", function () {
     const data = buildTopSources([rec("Nature"), rec(""), rec("   ")], 0);
     assert.strictEqual(data.missing, 2);
     assert.strictEqual(data.total, 1);
-    assert.deepEqual(data.entries.map((e) => e.name), ["Nature"]);
+    assert.deepEqual(
+      data.entries.map((e) => e.name),
+      ["Nature"],
+    );
   });
 
   it("slices to top-N", function () {
@@ -66,8 +76,15 @@ describe("buildTopSources", function () {
       2,
     );
     assert.lengthOf(data.entries, 2);
-    assert.deepEqual(data.entries.map((e) => e.name), ["A", "B"]);
-    assert.strictEqual(data.total, 3, "total counts pre-slice distinct sources");
+    assert.deepEqual(
+      data.entries.map((e) => e.name),
+      ["A", "B"],
+    );
+    assert.strictEqual(
+      data.total,
+      3,
+      "total counts pre-slice distinct sources",
+    );
   });
 
   it("empty input -> no entries, zero totals", function () {

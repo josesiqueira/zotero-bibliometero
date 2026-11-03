@@ -51,6 +51,7 @@ const ALPHA_TARGET = 0;
 const VELOCITY_DECAY = 0.82; // damping per tick
 /** Max per-node speed (px/tick) under which the layout is considered at rest. */
 const SPEED_MIN = 0.05;
+const COLD_TICKS_MAX = 120;
 /** Hard cap on per-axis displacement per tick. Keeps the explicit integrator
  *  stable under strong repulsion (without it a close pair of heavy aggregate
  *  cells can blow the layout up to astronomical coordinates). */
@@ -84,6 +85,7 @@ export class ForceSim {
   private linkDistance: number;
   private gravity: number;
   private alphaDecay: number;
+  private coldTicks = 0;
   private theta2: number;
 
   private alpha = 1;
@@ -158,6 +160,7 @@ export class ForceSim {
   reheat(): void {
     this.alpha = 1;
     this.atRest = false;
+    this.coldTicks = 0;
   }
 
   /**
@@ -167,6 +170,7 @@ export class ForceSim {
   nudge(target = 0.3): void {
     if (this.alpha < target) this.alpha = target;
     this.atRest = false;
+    this.coldTicks = 0;
   }
 
   /** Pin a node to a fixed position (excluded from integration). */
@@ -248,7 +252,14 @@ export class ForceSim {
 
     // Velocity-gated settle: cold AND slow -> freeze (quality fix #1). Zero
     // every velocity on this final tick so the next frame is identical.
-    if (this.alpha < ALPHA_MIN && maxSpeed2 < SPEED_MIN * SPEED_MIN) {
+    // Cold and slow -> freeze. A cold layout that still jiggles (large dense
+    // graphs can oscillate below the speed gate forever) is frozen anyway
+    // after COLD_TICKS_MAX steps, so the map always comes to rest.
+    if (this.alpha < ALPHA_MIN) this.coldTicks++;
+    if (
+      this.alpha < ALPHA_MIN &&
+      (maxSpeed2 < SPEED_MIN * SPEED_MIN || this.coldTicks > COLD_TICKS_MAX)
+    ) {
       for (const node of this.nodes) {
         node.vx = 0;
         node.vy = 0;

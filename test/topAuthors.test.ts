@@ -65,7 +65,7 @@ describe("buildTopAuthors", function () {
     );
     assert.deepEqual(
       data.entries.map((e) => e.label),
-      ["Adams, A.", "Banks, B.", "Carter, C."],
+      ["Adams, Al", "Banks, Bo", "Carter, Cy"],
       "equal counts -> alphabetical by label",
     );
   });

@@ -49,22 +49,26 @@ describe("normalizeCreators", function () {
   });
 
   it("keeps 'John Smith' and 'Jane Smith' distinct (different initial)", function () {
-    const john = normalizeCreators(rec([{ firstName: "John", lastName: "Smith" }]));
-    const jane = normalizeCreators(rec([{ firstName: "Jane", lastName: "Smith" }]));
+    const john = normalizeCreators(
+      rec([{ firstName: "John", lastName: "Smith" }]),
+    );
+    const jane = normalizeCreators(
+      rec([{ firstName: "Jane", lastName: "Smith" }]),
+    );
     assert.strictEqual(john[0].key, "smith|j");
     assert.strictEqual(jane[0].key, "smith|j");
     // NOTE: by design only the first initial discriminates, so John and Jane
     // intentionally share a key. We assert that documented behaviour, and that
     // a different initial (e.g. "Adam") does split.
-    const adam = normalizeCreators(rec([{ firstName: "Adam", lastName: "Smith" }]));
+    const adam = normalizeCreators(
+      rec([{ firstName: "Adam", lastName: "Smith" }]),
+    );
     assert.strictEqual(adam[0].key, "smith|a");
     assert.notStrictEqual(adam[0].key, john[0].key);
   });
 
   it("keys a single-field / institutional creator on the whole name", function () {
-    const out = normalizeCreators(
-      rec([{ name: "World Health Organization" }]),
-    );
+    const out = normalizeCreators(rec([{ name: "World Health Organization" }]));
     assert.lengthOf(out, 1);
     assert.strictEqual(out[0].key, "n:world health organization");
     assert.strictEqual(out[0].label, "World Health Organization");
@@ -78,7 +82,11 @@ describe("normalizeCreators", function () {
         { firstName: "Ada", lastName: "Lovelace" },
       ]),
     );
-    assert.lengthOf(out, 1, "empty creators are dropped, only Lovelace remains");
+    assert.lengthOf(
+      out,
+      1,
+      "empty creators are dropped, only Lovelace remains",
+    );
     assert.strictEqual(out[0].key, "lovelace|a");
   });
 

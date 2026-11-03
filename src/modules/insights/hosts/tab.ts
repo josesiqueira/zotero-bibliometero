@@ -23,11 +23,7 @@ interface TabState {
   body: HTMLElement | null;
 }
 
-function xhtml(
-  doc: Document,
-  tag: string,
-  cls?: string,
-): HTMLElement {
+function xhtml(doc: Document, tag: string, cls?: string): HTMLElement {
   const node = doc.createElementNS(
     "http://www.w3.org/1999/xhtml",
     tag,
@@ -45,8 +41,7 @@ export class TabHost implements HostController {
   private readonly states = new Map<_ZoteroTypes.MainWindow, TabState>();
   private restoreHandler: ((win: _ZoteroTypes.MainWindow) => void) | null =
     null;
-  private closedHandler: ((win: _ZoteroTypes.MainWindow) => void) | null =
-    null;
+  private closedHandler: ((win: _ZoteroTypes.MainWindow) => void) | null = null;
 
   /** Called by the hub when the tab's Restore button is pressed. */
   setRestoreHandler(fn: (win: _ZoteroTypes.MainWindow) => void): void {

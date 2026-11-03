@@ -30,7 +30,11 @@ function check(name, fn) {
     report.checks.push({ name, ok: true, detail: detail ?? "ok" });
     report.passed++;
   } catch (e) {
-    report.checks.push({ name, ok: false, detail: String(e && e.message ? e.message : e) });
+    report.checks.push({
+      name,
+      ok: false,
+      detail: String(e && e.message ? e.message : e),
+    });
     report.failed++;
   }
 }
@@ -40,7 +44,11 @@ async function acheck(name, fn) {
     report.checks.push({ name, ok: true, detail: detail ?? "ok" });
     report.passed++;
   } catch (e) {
-    report.checks.push({ name, ok: false, detail: String(e && e.message ? e.message : e) });
+    report.checks.push({
+      name,
+      ok: false,
+      detail: String(e && e.message ? e.message : e),
+    });
     report.failed++;
   }
 }
@@ -86,7 +94,12 @@ const VIEWS = [
   "composition",
 ];
 const NETWORK_VIEWS = ["coauthorship", "author-paper"];
-const CHART_VIEWS = ["pubs-per-year", "top-sources", "top-authors", "composition"];
+const CHART_VIEWS = [
+  "pubs-per-year",
+  "top-sources",
+  "top-authors",
+  "composition",
+];
 
 /* ---------------------------------------------------------------------------
  * 0. Instance + initialization
@@ -101,7 +114,10 @@ check("initialized + alive", () => {
   return "initialized";
 });
 check("config id correct", () => {
-  assert(inst.data.config.addonID === ID, "addonID mismatch: " + inst.data.config.addonID);
+  assert(
+    inst.data.config.addonID === ID,
+    "addonID mismatch: " + inst.data.config.addonID,
+  );
   return inst.data.config.addonID;
 });
 check("test hooks exposed", () => {
@@ -140,7 +156,9 @@ check("insights toolbar button in DOM", () => {
 await acheck("opening the Insights panel", async () => {
   const btn = doc.querySelector("#bibliometero-insights-button");
   assert(btn, "no toolbar button to click");
-  btn.click();
+  win.Zotero_Tabs.select("zotero-pane");
+  // The button toggles: only click when the panel is closed.
+  if (!test.getActiveView()) btn.click();
   // The hub mounts its first view asynchronously; wait for an active view.
   const ok = await waitFor(() => !!(test && test.getActiveView()), 6000, 150);
   assert(ok, "no active view after opening the panel");
@@ -190,7 +208,10 @@ for (const id of NETWORK_VIEWS) {
     await sleep(500);
     const after = test.getNodePositions();
     const disp = maxDisplacement(before, after);
-    assert(disp < 0.5, "node drifted " + disp.toFixed(3) + "px at rest (>=0.5)");
+    assert(
+      disp < 0.5,
+      "node drifted " + disp.toFixed(3) + "px at rest (>=0.5)",
+    );
     assert(test.isSettled(), "sim reports unsettled after rest sample");
     // SCREENSHOT CHECKPOINT: settled network, used as the visual jitter baseline.
     return id + " stable, maxDisplacement=" + disp.toFixed(3) + "px";
@@ -199,7 +220,9 @@ for (const id of NETWORK_VIEWS) {
   await acheck("re-layout moves then re-settles: " + id, async () => {
     // Negative guard: switching away and back triggers a fresh layout, so we
     // should observe motion (not settled immediately) and then a return to rest.
-    await test.switchView(id === "coauthorship" ? "author-paper" : "coauthorship");
+    await test.switchView(
+      id === "coauthorship" ? "author-paper" : "coauthorship",
+    );
     await sleep(200);
     await test.switchView(id);
     await waitFor(() => test.getActiveView() === id, 6000, 150);
@@ -241,7 +264,10 @@ await acheck("drag tracks cursor, no snap-back (AC-2)", async () => {
     assert(now, "dragged node vanished mid-drag");
     const track = Math.hypot(now.x - px, now.y - py);
     if (track > worstTrack) worstTrack = track;
-    assert(track <= 3, "node lagged pointer by " + track.toFixed(2) + "px (>3)");
+    assert(
+      track <= 3,
+      "node lagged pointer by " + track.toFixed(2) + "px (>3)",
+    );
   }
   // SCREENSHOT CHECKPOINT: node pinned under the cursor at the end of the drag.
   test.dispatchPointer("up", px, py);
@@ -249,15 +275,27 @@ await acheck("drag tracks cursor, no snap-back (AC-2)", async () => {
 
   const dropped = test.getNodePositions().find((n) => n.id === node.id);
   const snap = Math.hypot(dropped.x - px, dropped.y - py);
-  assert(snap <= 3, "node snapped back " + snap.toFixed(2) + "px after release");
+  assert(
+    snap <= 3,
+    "node snapped back " + snap.toFixed(2) + "px after release",
+  );
 
   // Neighbours must stay bounded (no explosion). Compare a non-dragged node.
   const other = start.find((n) => n.id !== node.id);
   const otherNow = test.getNodePositions().find((n) => n.id === other.id);
   const otherMove = Math.hypot(otherNow.x - other.x, otherNow.y - other.y);
-  assert(otherMove < 200, "neighbour moved " + otherMove.toFixed(1) + "px (unbounded)");
+  assert(
+    otherMove < 200,
+    "neighbour moved " + otherMove.toFixed(1) + "px (unbounded)",
+  );
 
-  return "worstTrack=" + worstTrack.toFixed(2) + "px snapBack=" + snap.toFixed(2) + "px";
+  return (
+    "worstTrack=" +
+    worstTrack.toFixed(2) +
+    "px snapBack=" +
+    snap.toFixed(2) +
+    "px"
+  );
 });
 
 /* ---------------------------------------------------------------------------
@@ -282,18 +320,29 @@ await acheck("single click on item node opens the paper (AC-3)", async () => {
   // A single click = down + up at the same point, no move in between.
   test.dispatchPointer("down", itemNode.x, itemNode.y);
   test.dispatchPointer("up", itemNode.x, itemNode.y);
-  const selected = await waitFor(() => {
-    const sel = ZoteroPane.getSelectedItems ? ZoteroPane.getSelectedItems() : [];
-    return sel.length > 0 && sel[0].id === itemNode.itemId;
-  }, 4000, 150);
-  assert(selected, "clicking the item node did not select item " + itemNode.itemId);
+  const selected = await waitFor(
+    () => {
+      const sel = ZoteroPane.getSelectedItems
+        ? ZoteroPane.getSelectedItems()
+        : [];
+      return sel.length > 0 && sel[0].id === itemNode.itemId;
+    },
+    4000,
+    150,
+  );
+  assert(
+    selected,
+    "clicking the item node did not select item " + itemNode.itemId,
+  );
   // SCREENSHOT CHECKPOINT: library tab focused with the clicked item selected.
 
   // Author nodes are a no-op for selection: clicking one must not change it.
   const authorNode = positions.find((n) => n.kind === "author");
   let authorNoop = "no author node to test";
   if (authorNode) {
-    const before = ZoteroPane.getSelectedItems().map((i) => i.id).join(",");
+    const before = ZoteroPane.getSelectedItems()
+      .map((i) => i.id)
+      .join(",");
     await test.switchView("author-paper");
     await waitFor(() => test.isSettled(), 6000, 100);
     const an = test.getNodePositions().find((n) => n.kind === "author");
@@ -301,8 +350,13 @@ await acheck("single click on item node opens the paper (AC-3)", async () => {
       test.dispatchPointer("down", an.x, an.y);
       test.dispatchPointer("up", an.x, an.y);
       await sleep(300);
-      const afterSel = ZoteroPane.getSelectedItems().map((i) => i.id).join(",");
-      assert(afterSel === before, "author-node click changed selection (should no-op)");
+      const afterSel = ZoteroPane.getSelectedItems()
+        .map((i) => i.id)
+        .join(",");
+      assert(
+        afterSel === before,
+        "author-node click changed selection (should no-op)",
+      );
       authorNoop = "author click no-op";
     }
   }
@@ -331,10 +385,14 @@ for (const id of CHART_VIEWS) {
       hy = r.top + Math.max(40, r.height * 0.4);
     }
     test.dispatchPointer("hover", hx, hy);
-    const got = await waitFor(() => {
-      const t = test.getTooltipText();
-      return t && t.trim().length > 0;
-    }, 3000, 150);
+    const got = await waitFor(
+      () => {
+        const t = test.getTooltipText();
+        return t && t.trim().length > 0;
+      },
+      3000,
+      150,
+    );
     assert(got, "no tooltip text on hover for " + id);
     const txt = test.getTooltipText();
     assert(txt && txt.trim().length > 0, "tooltip empty for " + id);
@@ -349,12 +407,16 @@ for (const id of CHART_VIEWS) {
 
 function bytesOf(out) {
   if (out && out.bytes) return out.bytes;
-  if (out && out.blob && typeof out.blob.arrayBuffer === "function") return null; // handled by caller
+  if (out && out.blob && typeof out.blob.arrayBuffer === "function")
+    return null; // handled by caller
   return null;
 }
 
 async function toUint8(out) {
-  if (out && out.bytes) return out.bytes instanceof Uint8Array ? out.bytes : new Uint8Array(out.bytes);
+  if (out && out.bytes)
+    return out.bytes instanceof Uint8Array
+      ? out.bytes
+      : new Uint8Array(out.bytes);
   if (out && out.blob && typeof out.blob.arrayBuffer === "function") {
     const buf = await out.blob.arrayBuffer();
     return new Uint8Array(buf);
@@ -382,7 +444,10 @@ for (const id of VIEWS) {
     assert(out, "exportView returned nothing for svg " + id);
     const text = (out.text || "").trim();
     assert(text.length > 0, "empty SVG text for " + id);
-    assert(/^<\?xml|^<svg/i.test(text), "SVG does not start with <svg for " + id);
+    assert(
+      /^<\?xml|^<svg/i.test(text),
+      "SVG does not start with <svg for " + id,
+    );
     // Parse it and assert it has shape elements.
     const parser = new win.DOMParser();
     const svgDoc = parser.parseFromString(text, "image/svg+xml");
@@ -399,6 +464,95 @@ for (const id of VIEWS) {
 }
 
 /* ---------------------------------------------------------------------------
+ * 7b. Click-through, library switching, host switching, figure export,
+ *     Settings pane.
+ * ------------------------------------------------------------------------- */
+
+await acheck("bar click selects exactly the items it counts", async () => {
+  await test.switchView("top-authors");
+  await sleep(500);
+  const bar = doc.querySelector(".bm-view-host .bm-bar");
+  assert(bar, "no bar to click");
+  const expected = Number(
+    /: (\d+)$/.exec(bar.querySelector("title").textContent)[1],
+  );
+  bar.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+  const ok = await waitFor(
+    () => win.ZoteroPane.getSelectedItems().length === expected,
+    4000,
+    150,
+  );
+  assert(
+    ok,
+    "selected " +
+      win.ZoteroPane.getSelectedItems().length +
+      ", bar says " +
+      expected,
+  );
+  assert(
+    !doc.getElementById("zotero-tb-search").value,
+    "quick search was changed",
+  );
+  return "selected " + expected + " items";
+});
+
+await acheck("selecting another library refreshes the panel", async () => {
+  const groups = Zotero.Groups.getAll();
+  if (!groups.length) return "no group library (skipped)";
+  await test.switchView("composition");
+  await sleep(400);
+  const status = () => doc.querySelector(".bm-hub-status").textContent;
+  const before = status();
+  await win.ZoteroPane.collectionsView.selectLibrary(groups[0].libraryID);
+  const changed = await waitFor(() => status() !== before, 5000, 150);
+  await win.ZoteroPane.collectionsView.selectLibrary(
+    Zotero.Libraries.userLibraryID,
+  );
+  await waitFor(() => status() === before, 5000, 150);
+  assert(changed, "status did not change after switching library");
+  return "refreshed for " + groups[0].name;
+});
+
+await acheck(
+  "maximize and restore keep one view (no double mount)",
+  async () => {
+    await test.switchView("coauthorship");
+    await sleep(400);
+    const canvases = () =>
+      doc.querySelectorAll(".bibliometero-network-canvas").length;
+    test.maximize();
+    await waitFor(() => test.getHostKind() === "tab", 4000, 100);
+    await sleep(800);
+    const inTab = canvases();
+    test.restore();
+    await waitFor(() => test.getHostKind() === "dock", 4000, 100);
+    await sleep(800);
+    assert(
+      inTab === 1 && canvases() === 1,
+      "canvases tab=" + inTab + " dock=" + canvases(),
+    );
+    assert(test.getActiveView() === "coauthorship", "view not kept");
+    return "one canvas in tab and dock";
+  },
+);
+
+await acheck("PNG figures are 2400 x 1440", async () => {
+  const r = await test.exportView("composition", "png");
+  const bytes = new Uint8Array(await r.blob.arrayBuffer());
+  const dv = new DataView(bytes.buffer);
+  const w = dv.getUint32(16);
+  const h = dv.getUint32(20);
+  assert(w === 2400 && h === 1440, "size " + w + "x" + h);
+  return w + "x" + h + ", " + Math.round(bytes.length / 1024) + " KB";
+});
+
+check("Settings pane registered", () => {
+  const ok = Zotero.PreferencePanes.pluginPanes.some((p) => p.pluginID === ID);
+  assert(ok, "no Bibliometero pane in Zotero Settings");
+  return "registered";
+});
+
+/* ---------------------------------------------------------------------------
  * 8. Final console error scan (bibliometero-relevant errors only).
  * ------------------------------------------------------------------------- */
 
@@ -413,7 +567,10 @@ check("no bibliometero errors in console", () => {
   const relevant = lines.filter(
     (l) => /bibliometero/i.test(l) && /error|exception|typeerror/i.test(l),
   );
-  assert(relevant.length === 0, "bibliometero errors: " + relevant.slice(0, 3).join(" | "));
+  assert(
+    relevant.length === 0,
+    "bibliometero errors: " + relevant.slice(0, 3).join(" | "),
+  );
   return relevant.length === 0 ? "clean" : relevant.length + " errors";
 });
 

@@ -21,3 +21,6 @@ node_modules
 
 # TSC test buildinfo
 tsconfig.tests.tmp.tsbuildinfo
+
+# Documentation site build output
+_site

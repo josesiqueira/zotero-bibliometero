@@ -1,0 +1,85 @@
+{
+  "$comment": "User-facing facts that are not views: the panel, the right-click commands and the settings. The view list comes from src/modules/insights/views/catalog.json. `npm run docs` writes the generated parts of README.md and builds the GitHub Pages site from both files; `npm run docs:check` fails when they disagree with the code (see scripts/docs.mjs).",
+  "tagline": "See your Zotero library as networks and charts.",
+  "intro": "Zotero Bibliometero adds an Insights panel to Zotero. Click the chart button in the tab bar and a panel opens under your item list with interactive views of your library: who writes with whom, which journals you read, how your collection grows year by year. Everything runs inside Zotero, with no account and no data leaving your computer.",
+  "panel": [
+    {
+      "title": "Opens under your item list",
+      "text": "The chart button in the tab bar opens Insights as a dock below the item list, so your library stays in view. Drag the divider to resize it; Zotero remembers the height."
+    },
+    {
+      "title": "Maximize to a full tab",
+      "text": "Maximize moves Insights into its own Zotero tab for a bigger canvas. Restore puts it back in the dock, on the same view."
+    },
+    {
+      "title": "Whole library or a curated set",
+      "text": "The switch in the header picks what the views show: your whole library, or a curated set of papers you choose. The set is kept per library and does not touch your tags or collections."
+    },
+    {
+      "title": "Click through to your items",
+      "text": "Charts link back to the library. Click a year, a source, an author or a slice to find those items; click a paper in the author/paper network to open it."
+    },
+    {
+      "title": "Export any view",
+      "text": "Export PNG and Export SVG save the current view as an image, ready for slides or a paper."
+    },
+    {
+      "title": "Stays up to date",
+      "text": "Add, edit or delete items and the open view refreshes on its own. Light and dark themes follow Zotero unless you pick one in Settings."
+    }
+  ],
+  "commands": [
+    {
+      "where": "Right-click one or more items",
+      "label": "Add to Insights",
+      "text": "Adds the selected items to the curated set. When all of them are already in the set, the command reads Remove from Insights instead."
+    },
+    {
+      "where": "Right-click one or more items",
+      "label": "Remove from Insights",
+      "text": "Removes the selected items from the curated set."
+    },
+    {
+      "where": "Right-click a collection",
+      "label": "Add collection to Insights",
+      "text": "Adds the items in the collection to the curated set. Items that are only in its subcollections are not added."
+    }
+  ],
+  "settings": {
+    "where": "Zotero Settings, Bibliometero",
+    "items": [
+      {
+        "pref": "hub.defaultView",
+        "label": "Default view",
+        "text": "The view Insights shows when there is no last-used view to return to."
+      },
+      {
+        "pref": "hub.theme",
+        "label": "Theme",
+        "text": "auto follows Zotero; light and dark force one look."
+      },
+      {
+        "pref": "insights.source",
+        "label": "Source",
+        "text": "Whole library or Curated set. Same as the switch in the panel header."
+      },
+      {
+        "pref": "hub.topN",
+        "label": "Top-N (ranked charts)",
+        "text": "How many bars Top sources and Top authors show. The Top-N box in each chart's header overrides it for that chart."
+      }
+    ],
+    "internal": [
+      "hub.lastView",
+      "hub.networkCap",
+      "insights.dockHeight",
+      "insights.maximized"
+    ]
+  },
+  "install": [
+    "Download zotero-bibliometero.xpi from the latest release.",
+    "In Zotero, open Tools, Plugins.",
+    "Click the gear icon, choose Install Plugin From File, and pick the downloaded file."
+  ],
+  "installNote": "Installed copies update themselves when a new version is released."
+}

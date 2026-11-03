@@ -1,0 +1,52 @@
+name: pages
+
+# Builds the documentation website from the same sources as the README
+# (scripts/docs.mjs) and deploys it to GitHub Pages. Runs on every push to
+# master, so the site always matches the code on master.
+
+on:
+  push:
+    branches: [master]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The generator has no dependencies, so no npm install is needed.
+      # It refuses to build when the docs disagree with the code.
+      - name: Build site
+        run: node scripts/docs.mjs
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

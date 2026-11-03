@@ -12,7 +12,7 @@ name: downloads-badge
 
 on:
   schedule:
-    - cron: '23 3 * * *'   # daily, off-peak
+    - cron: "23 3 * * *" # daily, off-peak
   release:
     types: [published]
   workflow_dispatch:

@@ -18,7 +18,7 @@
   "bugs": {
     "url": "https://github.com/josesiqueira/zotero-bibliometero/issues"
   },
-  "homepage": "https://github.com/josesiqueira/zotero-bibliometero#readme",
+  "homepage": "https://josesiqueira.github.io/zotero-bibliometero/",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "zotero-plugin serve",
@@ -27,7 +27,9 @@
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
     "test": "zotero-plugin test",
-    "update-deps": "npm update --save"
+    "update-deps": "npm update --save",
+    "docs": "node scripts/docs.mjs",
+    "docs:check": "node scripts/docs.mjs --check"
   },
   "dependencies": {
     "zotero-plugin-toolkit": "^5.1.0-beta.13"

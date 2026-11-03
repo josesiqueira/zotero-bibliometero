@@ -1,0 +1,399 @@
+/* Zotero Bibliometero documentation site. Generated pages use these tokens only. */
+:root {
+  --ground: #f2f4f3;
+  --surface: #ffffff;
+  --ink: #1b2430;
+  --muted: #586472;
+  --rule: #d5dbd9;
+  --teal: #1f6f78;
+  --teal-ink: #ffffff;
+  --ochre: #b9852b;
+  --plum: #74508a;
+  --edge: rgba(27, 36, 48, 0.22);
+  --focus: #1f6f78;
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --sans: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #151b22;
+    --surface: #1c242d;
+    --ink: #e6ebee;
+    --muted: #9aa7b2;
+    --rule: #2e3944;
+    --teal: #5fb3ba;
+    --teal-ink: #0f1a1c;
+    --ochre: #d9a650;
+    --plum: #b48fcb;
+    --edge: rgba(230, 235, 238, 0.2);
+    --focus: #5fb3ba;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 1.0625rem/1.6 var(--sans);
+  -webkit-text-size-adjust: 100%;
+}
+a {
+  color: var(--teal);
+  text-underline-offset: 0.18em;
+}
+a:hover {
+  text-decoration-thickness: 2px;
+}
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+code {
+  font-size: 0.92em;
+}
+
+.skip {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  background: var(--surface);
+  padding: 0.5rem 1rem;
+}
+.skip:focus {
+  left: 1rem;
+  z-index: 10;
+}
+
+/* Header */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font: 600 1.15rem/1 var(--serif);
+  color: var(--ink);
+  text-decoration: none;
+}
+.bar nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.1rem;
+  font-size: 0.95rem;
+}
+.bar nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.bar nav a:hover {
+  color: var(--ink);
+}
+
+/* Hero: the network is the one bold element on the page */
+.hero {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 3.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 2.5rem;
+  align-items: center;
+}
+.hero h1 {
+  font: 700 clamp(2.6rem, 6vw, 4.4rem)/0.98 var(--serif);
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+  font-variation-settings: "opsz" 72;
+}
+.lede {
+  font: 400 1.5rem/1.3 var(--serif);
+  margin: 0 0 1rem;
+  max-width: 26ch;
+}
+.hero-text p {
+  max-width: 60ch;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+.button {
+  display: inline-block;
+  padding: 0.7rem 1.15rem;
+  border-radius: 6px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.button:hover {
+  border-color: var(--teal);
+}
+.button.primary {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: var(--teal-ink);
+}
+.button.primary:hover {
+  filter: brightness(1.08);
+}
+.meta {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.hero-graph {
+  margin: 0;
+}
+.hero-graph canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  touch-action: none;
+  cursor: grab;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+}
+.hero-graph canvas.dragging {
+  cursor: grabbing;
+}
+.hero-graph figcaption {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 0.6rem;
+}
+
+/* Sections */
+.block {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+  border-top: 1px solid var(--rule);
+}
+.block h2 {
+  font: 560 clamp(1.8rem, 3.6vw, 2.4rem)/1.1 var(--serif);
+  margin: 0 0 0.75rem;
+  font-variation-settings: "opsz" 48;
+}
+.section-lede {
+  color: var(--muted);
+  max-width: 64ch;
+  margin: 0 0 2rem;
+}
+h3.sub {
+  font: 560 1.35rem/1.2 var(--serif);
+  margin: 2.5rem 0 1rem;
+}
+
+/* Views: one row each, drawing beside the text */
+.view {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 1.75rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.view:last-child {
+  border-bottom: 0;
+}
+.view h3 {
+  font: 560 1.4rem/1.2 var(--serif);
+  margin: 0 0 0.35rem;
+}
+.view .summary {
+  margin: 0 0 0.6rem;
+  max-width: 62ch;
+}
+.view ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  max-width: 64ch;
+}
+.view li + li {
+  margin-top: 0.2rem;
+}
+
+.drawing {
+  width: 100%;
+  height: auto;
+  color: var(--edge);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 0.5rem;
+}
+.drawing .edges line,
+.drawing .axis {
+  stroke: var(--edge);
+  stroke-width: 1.2;
+}
+.drawing .n0 {
+  fill: var(--teal);
+}
+.drawing .n1 {
+  fill: var(--plum);
+}
+.drawing .n2 {
+  fill: var(--ochre);
+}
+.drawing .muted {
+  fill: var(--rule);
+}
+.drawing .arc {
+  fill: none;
+  stroke-width: 11;
+}
+.drawing .a0 {
+  stroke: var(--teal);
+}
+.drawing .a1 {
+  stroke: var(--ochre);
+}
+.drawing .a2 {
+  stroke: var(--plum);
+}
+
+/* Panel features: a definition list in two columns */
+.features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem 3rem;
+  margin: 0;
+}
+.feature dt {
+  font: 600 1.05rem/1.3 var(--sans);
+  margin-bottom: 0.25rem;
+}
+.feature dd {
+  margin: 0;
+  color: var(--muted);
+  max-width: 58ch;
+}
+
+/* Tables */
+.table-wrap {
+  overflow-x: auto;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.97rem;
+}
+th,
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.65rem 1rem 0.65rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+thead th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+tbody th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Install: a real sequence, so it is numbered */
+.steps {
+  padding-left: 1.4rem;
+  max-width: 62ch;
+}
+.steps li {
+  padding-left: 0.3rem;
+  margin-bottom: 0.4rem;
+}
+.steps li::marker {
+  font: 700 1.05rem var(--serif);
+  color: var(--teal);
+}
+
+/* Changelog */
+.release {
+  max-width: 64ch;
+  margin-bottom: 1.5rem;
+}
+.release h3 {
+  font: 560 1.3rem/1.2 var(--serif);
+  margin: 0 0 0.5rem;
+}
+.release time {
+  font: 400 0.95rem var(--sans);
+  color: var(--muted);
+  margin-left: 0.5rem;
+}
+.release h4 {
+  font: 600 0.98rem var(--sans);
+  margin: 0.9rem 0 0.25rem;
+}
+.release ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.foot {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.foot p {
+  margin: 0.3rem 0;
+  max-width: 72ch;
+}
+
+@media (max-width: 760px) {
+  .bar,
+  .hero,
+  .block,
+  .foot {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 1.75rem;
+    padding-top: 1rem;
+  }
+  .view {
+    grid-template-columns: 1fr;
+    gap: 0.9rem;
+  }
+  .view .drawing {
+    max-width: 14rem;
+  }
+  .features {
+    grid-template-columns: 1fr;
+  }
+}

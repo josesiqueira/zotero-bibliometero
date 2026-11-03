@@ -4,6 +4,7 @@ on:
   push:
     branches: ["**"]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   build:
@@ -30,6 +31,59 @@ jobs:
         # Proves the plugin packages cleanly. We deliberately do NOT run
         # `npx zotero-plugin test` in CI: the test runner launches a real
         # Zotero binary (Firefox-based) which is not available on a CI runner.
-        # The mocha suite under test/ runs locally / by the maintainer against
-        # a live Zotero 9 instance (npm test => zotero-plugin test).
+        # The mocha suite under test/ and the live harness under test/live/ run
+        # locally by the maintainer against a running Zotero.
         run: npx zotero-plugin build
+
+  docs:
+    name: docs in sync with code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Fails when README.md is not regenerated, when a view, setting or
+      # right-click command exists in the code but not in the docs (or the
+      # other way round), or when user-facing text names a Zotero version.
+      - name: Check generated docs
+        run: node scripts/docs.mjs --check
+
+      # Keep a Changelog: a change to the plugin (src/ or addon/) needs an
+      # entry in CHANGELOG.md. Opt out for changes users cannot notice with
+      # "[skip changelog]" in the commit message, or the skip-changelog label
+      # on a pull request.
+      - name: Check changelog entry
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          SKIP_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            [ "$SKIP_LABEL" = "true" ] && { echo "skip-changelog label set."; exit 0; }
+            range="$PR_BASE...$PR_HEAD"
+          else
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              echo "New branch, nothing to compare."; exit 0
+            fi
+            range="$BEFORE..$AFTER"
+          fi
+          if git log --format=%B "$range" | grep -qi '\[skip changelog\]'; then
+            echo "[skip changelog] found in a commit message."; exit 0
+          fi
+          changed=$(git diff --name-only "$range")
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(src|addon)/' && ! echo "$changed" | grep -qx 'CHANGELOG.md'; then
+            echo "::error file=CHANGELOG.md::The plugin changed (src/ or addon/) but CHANGELOG.md did not. Add an entry under ## [Unreleased]."
+            exit 1
+          fi
+          echo "Changelog check passed."

@@ -19,6 +19,7 @@ import { svgText, createPlot, clearSvg } from "./chartkit/svg";
 import { renderRankedBars, type RankedEntry } from "./chartkit/rankedBars";
 import { createTooltip, type Tooltip } from "./chartkit/tooltip";
 import { serializeSVG, svgToPng } from "./chartkit/exporter";
+import { getPrefRaw } from "../../../utils/prefs";
 
 export function createTopAuthorsChart(): VizModule {
   return new TopAuthorsChart();
@@ -62,7 +63,10 @@ export class TopAuthorsChart implements VizModule {
   }
 
   private topN(): number {
-    const v = Number(this.ctx?.prefs.get("topN", 15));
+    // The header box saves a per-chart value; until then the Settings pane
+    // value (hub.topN) is the default.
+    const fallback = Number(getPrefRaw("hub.topN")) || 15;
+    const v = Number(this.ctx?.prefs.get("topN", fallback));
     return isFinite(v) && v > 0 ? Math.floor(v) : 15;
   }
 
@@ -143,9 +147,7 @@ export class TopAuthorsChart implements VizModule {
       maxLabelChars: 26,
       tooltip: this.tooltip,
       toHostXY: (cx, cy) => this.hostXY(cx, cy),
-      onBarClick: focus
-        ? (entry) => focus(entry.key, entry.label)
-        : undefined,
+      onBarClick: focus ? (entry) => focus(entry.key, entry.label) : undefined,
     });
     this.updateStatus();
   }

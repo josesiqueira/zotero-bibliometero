@@ -1,0 +1,86 @@
+{
+  "$comment": "Single source of truth for the Insights views. The plugin reads id, label and tooltip (nav strip order, labels, hover text). The documentation generator (scripts/docs.mjs) reads every field to build the README and the GitHub Pages site. Add or change a view here, then run `npm run docs`.",
+  "views": [
+    {
+      "id": "coauthorship",
+      "label": "Co-authorship",
+      "kind": "network",
+      "tooltip": "Co-authorship network: each dot is an author, a line links authors who share a paper. Bigger dots wrote more.",
+      "summary": "Authors as nodes, with a line between two authors who share a paper. Bigger nodes wrote more of your items.",
+      "details": [
+        "Built from the creators field of every regular item, so it is correct for the whole library.",
+        "Large libraries keep the 400 authors with the most items, so the view stays smooth.",
+        "Drag a node to pin it, pan the canvas, and zoom with the mouse wheel.",
+        "Re-layout, Fit and Release pins buttons in the header."
+      ]
+    },
+    {
+      "id": "author-paper",
+      "label": "Author / paper",
+      "kind": "network",
+      "tooltip": "Your papers and their authors, linked by who wrote what. Best on a Curated set; the whole library is capped to the most co-authored papers.",
+      "summary": "A two-sided network of your papers and their authors: who wrote what.",
+      "details": [
+        "Click a paper node to open that paper in your library.",
+        "Works best on a curated set. On the whole library it keeps the most co-authored papers, up to 400 nodes.",
+        "Same drag, pan, zoom and pin controls as the co-authorship network."
+      ]
+    },
+    {
+      "id": "pubs-per-year",
+      "label": "Publications / year",
+      "kind": "chart",
+      "tooltip": "How many items you have per publication year. Click a bar to find that year's items in your library.",
+      "summary": "A histogram of your items per publication year, with a separate bar for undated items.",
+      "details": [
+        "Hover a bar for the exact count.",
+        "Click a bar to search your library for that year's items."
+      ]
+    },
+    {
+      "id": "top-sources",
+      "label": "Top sources",
+      "kind": "chart",
+      "tooltip": "The journals and conferences that appear most in this set. Click one to find its items in your library.",
+      "summary": "A ranked bar chart of the journals and conferences that appear most often.",
+      "details": [
+        "Choose how many sources to show with the Top-N box in the header.",
+        "Click a bar to search your library for that source."
+      ]
+    },
+    {
+      "id": "top-authors",
+      "label": "Top authors",
+      "kind": "chart",
+      "tooltip": "Authors ranked by how many of your items they wrote. Click one to find their items in your library.",
+      "summary": "A ranked bar chart of authors by the number of your items they wrote.",
+      "details": [
+        "Choose how many authors to show with the Top-N box in the header.",
+        "Click a bar to search your library for that author."
+      ]
+    },
+    {
+      "id": "composition",
+      "label": "Composition",
+      "kind": "chart",
+      "tooltip": "A breakdown of your items by type and by collection. Click a slice to see those items.",
+      "summary": "Two donut charts: your items by item type and by collection.",
+      "details": [
+        "Hover a slice for its count and percentage.",
+        "Click an item-type slice to select those items, or a collection slice to open that collection."
+      ]
+    },
+    {
+      "id": "set",
+      "label": "Set",
+      "kind": "manage",
+      "tooltip": "Manage the curated set, the specific papers Insights focuses on. Add papers by right-clicking them in the library.",
+      "summary": "The list of papers in your curated set, the specific papers Insights focuses on.",
+      "details": [
+        "Each row shows the title, first author and year. Double-click a row to show the paper in your library.",
+        "Remove one paper with its trash button, or empty the set with Clear all.",
+        "Add current selection adds the items selected in the library."
+      ]
+    }
+  ]
+}

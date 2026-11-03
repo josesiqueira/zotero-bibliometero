@@ -19,6 +19,7 @@ import { svgText, createPlot, clearSvg } from "./chartkit/svg";
 import { renderRankedBars, type RankedEntry } from "./chartkit/rankedBars";
 import { createTooltip, type Tooltip } from "./chartkit/tooltip";
 import { serializeSVG, svgToPng } from "./chartkit/exporter";
+import { getPrefRaw } from "../../../utils/prefs";
 
 export function createTopSourcesChart(): VizModule {
   return new TopSourcesChart();
@@ -63,7 +64,10 @@ export class TopSourcesChart implements VizModule {
   }
 
   private topN(): number {
-    const v = Number(this.ctx?.prefs.get("topN", 15));
+    // The header box saves a per-chart value; until then the Settings pane
+    // value (hub.topN) is the default.
+    const fallback = Number(getPrefRaw("hub.topN")) || 15;
+    const v = Number(this.ctx?.prefs.get("topN", fallback));
     return isFinite(v) && v > 0 ? Math.floor(v) : 15;
   }
 
@@ -150,18 +154,14 @@ export class TopSourcesChart implements VizModule {
 
     if (hasFooter) {
       this.svg.appendChild(
-        svgText(
-          this.ctx.doc,
-          `+${d.total - d.entries.length} more sources`,
-          {
-            x: this.width - 12,
-            y: this.height - 7,
-            "text-anchor": "end",
-            "font-size": 10,
-            "font-style": "italic",
-            fill: theme.muted,
-          },
-        ),
+        svgText(this.ctx.doc, `+${d.total - d.entries.length} more sources`, {
+          x: this.width - 12,
+          y: this.height - 7,
+          "text-anchor": "end",
+          "font-size": 10,
+          "font-style": "italic",
+          fill: theme.muted,
+        }),
       );
     }
     this.updateStatus();

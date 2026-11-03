@@ -1,6 +1,9 @@
 # Zotero Bibliometero
 
-[![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg?style=flat-square)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/josesiqueira/zotero-bibliometero?style=flat-square&logo=github&label=release)](https://github.com/josesiqueira/zotero-bibliometero/releases/latest)
+[![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/josesiqueira/zotero-bibliometero/master/.github/badges/downloads.json&style=flat-square&logo=github)](https://github.com/josesiqueira/zotero-bibliometero/releases)
+[![License: AGPL-3.0-or-later](https://img.shields.io/github/license/josesiqueira/zotero-bibliometero?style=flat-square)](LICENSE)
+[![Issues](https://img.shields.io/github/issues/josesiqueira/zotero-bibliometero?style=flat-square&logo=github)](https://github.com/josesiqueira/zotero-bibliometero/issues)
 
 Zotero Bibliometero adds an **Insights** panel to Zotero: a chart-icon button in the
 tab bar opens a dedicated tab with six interactive visualizations of your library. It

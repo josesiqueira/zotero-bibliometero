@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- Zotero Bibliometero icon, 16 to 32 px version of icon.svg: the sheet is
+       dropped and strokes are thicker so the shape survives at small sizes. -->
+  <g stroke-linecap="round">
+    <path d="M7 9 L2.6 2.6 M7 9 L13.4 13.4" stroke="#3A4352" stroke-width="2.4"/>
+    <path d="M7 9 L2.6 2.6 M7 9 L13.4 13.4" stroke="#E3E4E7" stroke-width="0.9"/>
+  </g>
+  <circle cx="2.6" cy="2.6" r="2.1" fill="#ECECEE" stroke="#3A4352" stroke-width="1"/>
+  <circle cx="13.4" cy="13.4" r="2.1" fill="#ECECEE" stroke="#3A4352" stroke-width="1"/>
+  <circle cx="7" cy="9" r="5.9" fill="#FFFFFF" stroke="#3A4352" stroke-width="0.8"/>
+  <circle cx="7" cy="9" r="5" fill="#DC0916"/>
+  <g fill="#FFFFFF">
+    <rect x="3.6" y="9.6" width="1.9" height="2.6"/>
+    <rect x="6.05" y="6" width="1.9" height="6.2"/>
+    <rect x="8.5" y="8" width="1.9" height="4.2"/>
+  </g>
+</svg>

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A new plugin icon: a red hub node with a bar chart, in the same style as the other plugins by the same author.
 - The Top sources and Composition tooltips say that you can click through to your items.
 
 ### Fixed

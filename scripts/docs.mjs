@@ -531,7 +531,9 @@ function renderSite() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Zotero Bibliometero</title>
 <meta name="description" content="${esc(pkg.description)}">
-<link rel="icon" href="favicon.png">
+<link rel="icon" href="icon-small.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,560;6..72,700&family=Public+Sans:wght@400;600&display=swap">
@@ -540,7 +542,7 @@ function renderSite() {
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="bar">
-  <a class="brand" href="./"><img src="favicon.png" alt="" width="20" height="20">Bibliometero</a>
+  <a class="brand" href="./"><img src="icon-small.svg" alt="" width="26" height="26">Bibliometero</a>
   <nav aria-label="Sections">
     <a href="#views">Views</a>
     <a href="#panel">The panel</a>
@@ -647,10 +649,12 @@ if (CHECK) {
   fs.writeFileSync(path.join(out, "index.html"), html);
   for (const f of ["style.css", "hero.js"])
     fs.copyFileSync(path.join(ROOT, "docs/site", f), path.join(out, f));
-  fs.copyFileSync(
-    path.join(ROOT, "addon/content/icons/favicon.png"),
-    path.join(out, "favicon.png"),
-  );
+  for (const [from, to] of [
+    ["addon/content/icons/favicon.png", "favicon.png"],
+    ["addon/content/icons/icon.svg", "icon.svg"],
+    ["addon/content/icons/icon-small.svg", "icon-small.svg"],
+  ])
+    fs.copyFileSync(path.join(ROOT, from), path.join(out, to));
   fs.writeFileSync(path.join(out, ".nojekyll"), "");
 }
 

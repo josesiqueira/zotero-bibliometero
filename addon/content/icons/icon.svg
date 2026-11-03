@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- Zotero Bibliometero icon (96 px and 48 px; icon-small.svg is the 16 px version). Family system (from watch-folder):
+       light grey objects (#F4F4F5 to #CFD0D4) with 3px slate outline (#525B69 to #323B4A, darker at bottom),
+       light from top, 1px white top bevel, one signal-red emblem (#EC1C27 to #C8000C) with white keyline
+       and soft slate cast shadow below, white glyph inside, white content sheet with red marks top-right. -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4F4F5"/>
+      <stop offset="1" stop-color="#CFD0D4"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#525B69"/>
+      <stop offset="1" stop-color="#323B4A"/>
+    </linearGradient>
+    <linearGradient id="red" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EC1C27"/>
+      <stop offset="1" stop-color="#C8000C"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.4"/>
+    </filter>
+  </defs>
+
+  <!-- links (co-authorship ties) -->
+  <!-- drawn as grey tubes with a slate outline, like the nodes, so they stay
+       visible on dark backgrounds too -->
+  <g stroke-linecap="round" fill="none">
+    <g stroke="url(#line)" stroke-width="9">
+      <path d="M43 56 L15 15"/>
+      <path d="M43 56 L81 82"/>
+      <path d="M75 30 L81 82"/>
+    </g>
+    <g stroke="#E3E4E7" stroke-width="3.6">
+      <path d="M43 56 L15 15"/>
+      <path d="M43 56 L81 82"/>
+      <path d="M75 30 L81 82"/>
+    </g>
+  </g>
+
+  <!-- author nodes -->
+  <circle cx="15" cy="15" r="11.5" fill="url(#body)" stroke="url(#line)" stroke-width="3"/>
+  <path d="M7.2 13 A8 8 0 0 1 22.8 13" fill="none" stroke="#FFFFFF" stroke-width="1.3"/>
+  <circle cx="81" cy="82" r="12" fill="url(#body)" stroke="url(#line)" stroke-width="3"/>
+  <path d="M72.8 80 A8.5 8.5 0 0 1 89.2 80" fill="none" stroke="#FFFFFF" stroke-width="1.3"/>
+
+  <!-- paper node: white sheet top-right, tucked behind the hub (family accent slot) -->
+  <path d="M60.5 3.5 H80.5 L91.5 14.5 V42.5 H60.5 Z" fill="#FFFFFF" stroke="url(#line)" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M80.5 3.5 V14.5 H91.5" fill="#E2E3E5" stroke="url(#line)" stroke-width="3" stroke-linejoin="round"/>
+  <g fill="#DC0916">
+    <rect x="66" y="12" width="12" height="5" rx="1.6"/>
+    <rect x="66" y="22" width="20" height="5" rx="1.6"/>
+    <rect x="66" y="32" width="14" height="4" rx="1.6"/>
+  </g>
+
+  <!-- emblem: red hub with white keyline and soft slate cast shadow -->
+  <ellipse cx="44.5" cy="62" rx="28" ry="25" fill="#5E6676" opacity="0.45" filter="url(#soft)"/>
+  <circle cx="43" cy="56" r="30.5" fill="#FFFFFF" stroke="url(#line)" stroke-width="2.6"/>
+  <circle cx="43" cy="56" r="27.6" fill="url(#red)"/>
+  <path d="M21.6 65 A23.8 23.8 0 0 0 64.4 65" fill="none" stroke="#FB2430" stroke-width="1.6" opacity="0.8"/>
+
+  <!-- glyph: publications-per-year histogram -->
+  <g fill="#FFFFFF">
+    <rect x="24" y="60" width="9" height="12" rx="1.8"/>
+    <rect x="39" y="42" width="9" height="30" rx="1.8"/>
+    <rect x="54" y="50" width="9" height="22" rx="1.8"/>
+  </g>
+</svg>

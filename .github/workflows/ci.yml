@@ -56,9 +56,9 @@ jobs:
         run: node scripts/docs.mjs --check
 
       # Keep a Changelog: a change to the plugin (src/ or addon/) needs an
-      # entry in CHANGELOG.md. Opt out for changes users cannot notice with
-      # "[skip changelog]" in the commit message, or the skip-changelog label
-      # on a pull request.
+      # entry in CHANGELOG.md. A commit users cannot notice (refactor, comments)
+      # opts out with "[skip changelog]" in its subject line; a pull request
+      # opts out with the skip-changelog label.
       - name: Check changelog entry
         env:
           EVENT: ${{ github.event_name }}
@@ -70,20 +70,24 @@ jobs:
         run: |
           if [ "$EVENT" = "pull_request" ]; then
             [ "$SKIP_LABEL" = "true" ] && { echo "skip-changelog label set."; exit 0; }
-            range="$PR_BASE...$PR_HEAD"
+            base="$PR_BASE"; head="$PR_HEAD"
           else
             if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
               echo "New branch, nothing to compare."; exit 0
             fi
-            range="$BEFORE..$AFTER"
+            base="$BEFORE"; head="$AFTER"
           fi
-          if git log --format=%B "$range" | grep -qi '\[skip changelog\]'; then
-            echo "[skip changelog] found in a commit message."; exit 0
+          needs=""
+          for c in $(git rev-list "$base..$head"); do
+            subject=$(git log -1 --format=%s "$c")
+            case "$subject" in *"[skip changelog]"*) echo "skip: $subject"; continue ;; esac
+            if git diff-tree --no-commit-id --name-only -r "$c" | grep -qE '^(src|addon)/'; then
+              needs="$needs $c"
+            fi
+          done
+          if [ -z "$needs" ]; then echo "No plugin changes that need a changelog entry."; exit 0; fi
+          if git diff --name-only "$base...$head" | grep -qx 'CHANGELOG.md'; then
+            echo "Changelog check passed."; exit 0
           fi
-          changed=$(git diff --name-only "$range")
-          echo "$changed"
-          if echo "$changed" | grep -qE '^(src|addon)/' && ! echo "$changed" | grep -qx 'CHANGELOG.md'; then
-            echo "::error file=CHANGELOG.md::The plugin changed (src/ or addon/) but CHANGELOG.md did not. Add an entry under ## [Unreleased]."
-            exit 1
-          fi
-          echo "Changelog check passed."
+          echo "::error file=CHANGELOG.md::These commits change the plugin (src/ or addon/) but CHANGELOG.md did not change:$needs. Add an entry under ## [Unreleased]."
+          exit 1

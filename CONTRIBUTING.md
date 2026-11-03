@@ -40,7 +40,8 @@ The `docs` job in `.github/workflows/ci.yml` fails when:
   `addon/manifest.json` and the served `update.json`);
 - a commit range changes `src/` or `addon/` without touching `CHANGELOG.md`.
   For changes users cannot notice (refactors, comments), put `[skip changelog]`
-  in the commit message, or add the `skip-changelog` label to the pull request.
+  in that commit's subject line, or add the `skip-changelog` label to the pull
+  request.
 
 The `pages` workflow rebuilds and deploys the website on every push to
 `master`, so the site always describes what is on `master`.
